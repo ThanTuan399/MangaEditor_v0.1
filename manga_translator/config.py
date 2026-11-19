@@ -128,6 +128,7 @@ class Translator(str, Enum):
     google_image_web = "google_image_web"
     google_web = "google_web"
     local_nllb = "local_nllb"
+    ollama = "ollama"
     openai = "openai"
     openai_hq = "openai_hq"
     gemini = "gemini"
@@ -295,6 +296,12 @@ class TranslatorConfig(BaseModel):
     """Timeout for browser navigation and translation output."""
     google_web_retries: int = 2
     """Retries per text region when Google Translate Web does not return a result."""
+
+    # Ollama is a separate local translator; it never reads OpenAI keys.
+    ollama_model: str = "qwen3:4b"
+    ollama_base_url: str = "http://127.0.0.1:11434/v1"
+    ollama_disable_thinking: bool = True
+    ollama_streaming: bool = False
 
     # Local/offline NLLB translator settings.
     local_model_name: str = 'facebook/nllb-200-distilled-600M'
