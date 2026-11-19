@@ -176,6 +176,7 @@ class EditorToolbar(CardWidget):
         self.content_widget: QWidget | None = None
         # 菜单在语言切换时整体重建，所有需要恢复的状态都存在字段里
         self._display_mode = "full"
+        self._last_non_compare_mode = "full"
         self._align_ref = "selection"
         self._can_undo = False
         self._can_redo = False
@@ -242,6 +243,14 @@ class EditorToolbar(CardWidget):
         self.display_mode_button.setIcon(FIF.VIEW)
         self.display_mode_button.setText(self._t("Display Mode"))
         layout.addWidget(self.display_mode_button)
+
+        # One-click before/after comparison; the full display-mode menu remains.
+        self.compare_quick_button = ToolButton()
+        self.compare_quick_button.setIcon(FIF.VIEW)
+        self.compare_quick_button.setCheckable(True)
+        set_hover_hint(self.compare_quick_button, "Ảnh gốc / bản đã chỉnh sửa")
+        self.compare_quick_button.clicked.connect(self._on_quick_compare_clicked)
+        layout.addWidget(self.compare_quick_button)
 
         self.arrange_button = DropDownPushButton()
         self.arrange_button.setIcon(FIF.LAYOUT)
@@ -542,8 +551,20 @@ class EditorToolbar(CardWidget):
     def _on_display_mode_selected(self, mode: str):
         if mode == self._display_mode:
             return
+        if mode != "compare_original_split":
+            self._last_non_compare_mode = mode
         self._display_mode = mode
+        compare_checked = mode == "compare_original_split"
+        self.compare_quick_button.blockSignals(True)
+        self.compare_quick_button.setChecked(compare_checked)
+        self.compare_quick_button.blockSignals(False)
+        for name, action in getattr(self, "display_mode_actions", {}).items():
+            action.setChecked(name == mode)
         self.display_mode_changed.emit(mode)
+
+    def _on_quick_compare_clicked(self, checked: bool):
+        mode = "compare_original_split" if checked else self._last_non_compare_mode
+        self._on_display_mode_selected(mode)
 
     def _on_snap_action_triggered(self, checked: bool = False):
         self.set_snap_enabled(checked, emit=True)
@@ -834,6 +855,7 @@ class EditorToolbar(CardWidget):
         """刷新所有UI文本（用于语言切换）。菜单整体重建，状态从字段恢复。"""
         self.menu_button.setText(self._t("Menu"))
         self.display_mode_button.setText(self._t("Display Mode"))
+        set_hover_hint(self.compare_quick_button, "Ảnh gốc / bản đã chỉnh sửa")
         self.arrange_button.setText(self._t("Arrange"))
         self.save_button.setText(self._t("Save"))
         self.export_button.setText(self._t("Export Image"))
