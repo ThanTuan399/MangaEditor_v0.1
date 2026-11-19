@@ -79,7 +79,7 @@ def test_ollama_custom_settings_and_thinking_control():
     assert backend.model == "qwen3:8b"
     assert backend._resolve_translator_custom_api_params("qwen3:8b") == {}
     assert backend._is_streaming_enabled() is True
-    assert backend._max_total_attempts == 2
+    assert backend._max_total_attempts == 3  # 2 retries + initial call
 
 
 def test_gui_config_accepts_ollama_without_api_key():
