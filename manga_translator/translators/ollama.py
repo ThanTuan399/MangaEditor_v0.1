@@ -99,7 +99,7 @@ class OllamaTranslator(OpenAITranslator):
         prompts = [
             f"You are a professional manga dialogue translator. Translate from {source} to {target}.",
             "Return ONLY one JSON object in exactly this shape:",
-            '{"translations":[{"id":1,"translation":"translated text"}]}',
+            '{"translations":[{"id":INPUT_ID,"translation":"TARGET_TEXT"}]}',
             "Use the input IDs from the latest user message, exactly once each.",
             "The number of translations MUST equal the number of input items.",
             "Do not translate previous messages, repeat input examples, create extra IDs,",
