@@ -1,6 +1,7 @@
 """Phase 2: local Ollama backend and automatic translation integration."""
 import _bootstrap  # noqa: F401
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -127,8 +128,7 @@ def test_ollama_probe_detects_local_model(monkeypatch):
         )
 
 
-@pytest.mark.asyncio
-async def test_ollama_translation_uses_existing_batch_pipeline(monkeypatch):
+def test_ollama_translation_uses_existing_batch_pipeline(monkeypatch):
     config = Config()
     config.translator.translator = Translator.ollama
     backend = OllamaTranslator()
@@ -151,7 +151,7 @@ async def test_ollama_translation_uses_existing_batch_pipeline(monkeypatch):
     monkeypatch.setattr(backend, "_translate_with_split", fake_translate_with_split)
     monkeypatch.setattr(backend, "_clean_translation_output", lambda o, t, lang: t)
 
-    output = await backend._translate("JPN", "VIN", ["こんにちは", "さようなら"])
+    output = asyncio.run(backend._translate("JPN", "VIN", ["こんにちは", "さようなら"]))
     assert output == ["Xin chào", "Tạm biệt"]
     assert batches == [("_translate_batch", ["こんにちは", "さようなら"], "VIN")]
     assert check_calls == [
