@@ -141,13 +141,13 @@ class OCRImagePreview(QGraphicsView):
 
 
 class OCRWorkspacePanel(QWidget):
-    editor_requested = pyqtSignal(str, str)
-
     """Manage isolated OCR project folders, edit translations, and render changed pages.
 
     Render Batch always uses current project's images and never merges the
     normal Translation page's global file sources.
     """
+
+    editor_requested = pyqtSignal(str, str)
 
     def __init__(self, controller, t_func=lambda value: value, parent=None):
         super().__init__(parent)
@@ -447,7 +447,8 @@ class OCRWorkspacePanel(QWidget):
             return
         if self._dirty and not self.save_current():
             return
-        self.editor_requested.emit(folder, self.current_image_path or self.image_paths[0])
+        selected_page = self.projects.last_editor_page(folder) or self.current_image_path or self.image_paths[0]
+        self.editor_requested.emit(folder, selected_page)
 
     def _open_output_folder(self):
         folder = self.projects.active
@@ -575,6 +576,8 @@ class OCRWorkspacePanel(QWidget):
                 self.page_combo.blockSignals(False)
             return
         self.load_page(self.image_paths[index])
+        if self.projects.active:
+            self.projects.remember_editor_page(self.projects.active, self.image_paths[index])
 
     def _clear_page(self):
         self.current_image_path = None
