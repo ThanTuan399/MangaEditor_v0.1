@@ -44,8 +44,8 @@ Sao lưu các thư mục dữ liệu/JSON cần giữ, dừng ứng dụng rồi
 
 ```powershell
 cd "D:\app\New folder\MangaEditerV2\MangaEditor_Phase1"
-git fetch origin
-git checkout -b feat/ollama-auto-translation origin/feat/ollama-auto-translation
+git fetch origin feat/ollama-auto-translation
+git switch -c feat/ollama-auto-translation FETCH_HEAD
 uv sync --locked --no-default-groups --group cpu
 .\Win-Start.bat
 ```
