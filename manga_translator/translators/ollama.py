@@ -6,12 +6,15 @@ API rotation and model settings completely separate from OpenAI.
 """
 from __future__ import annotations
 
+import asyncio
+
 from .common import CommonTranslator
 from .openai import OpenAITranslator
 from ..utils.ollama_local import (
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
     normalize_ollama_base_url,
+    check_ollama_connection,
     validate_ollama_model_name,
 )
 
@@ -48,6 +51,10 @@ class OllamaTranslator(OpenAITranslator):
         self._enable_streaming = bool(
             self._get_config_value(cfg, "ollama_streaming", False)
         )
+        # General CLI defaults to unlimited retries; an offline local server
+        # must fail promptly rather than retry forever on connection errors.
+        if self.attempts == -1:
+            self.attempts = 3
         self._max_total_attempts = self._resolve_max_total_attempts()
         self._runtime_api_settings = None
         old_identity = (self.base_url, self.model)
@@ -63,3 +70,17 @@ class OllamaTranslator(OpenAITranslator):
         # for Qwen3-style thinking models. The user can turn it off in Settings.
         del model_name
         return {"reasoning_effort": "none"} if self._ollama_disable_thinking else {}
+
+    def _is_streaming_enabled(self, ctx=None) -> bool:
+        # This is an Ollama-only toggle; never inherit OpenAI streaming settings.
+        return self._enable_streaming
+
+    async def _translate(self, from_lang, to_lang, queries, ctx=None):
+        if not queries:
+            return []
+        # Check the selected model on a worker thread before the first generation
+        # request; errors say whether Ollama is stopped or the model is missing.
+        await asyncio.to_thread(
+            check_ollama_connection, self.base_url, self.model, 3.0
+        )
+        return await super()._translate(from_lang, to_lang, queries, ctx=ctx)
