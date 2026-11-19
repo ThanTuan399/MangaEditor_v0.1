@@ -75,6 +75,20 @@ Bạn vẫn copy OCR → Google Dịch bên ngoài → Paste Batch → Render.
 Không cần gỡ llama.cpp hay xóa GGUF trên máy để tiếp tục dùng app.
 
 
+## Giai đoạn 1: Editor nhiều trang và mở lại phiên chỉnh sửa
+
+- **Render trang đã đổi**: render chỉ những trang có bản dịch cần cập nhật (giữ cache).
+- **Render toàn bộ trang đã dịch**: ép render mọi trang có bản dịch, bỏ qua cache. Trang chưa có bản dịch không bị inpaint.
+- **Render trang đang chọn**: ép render trang đang xem.
+- **Mở / tiếp tục chỉnh sửa**: trực tiếp mở Editor với **toàn bộ danh sách ảnh RAW của dự án hiện tại**, không phụ thuộc số trang vừa render. Editor đọc JSON, mask, inpaint và overlay đã lưu; không cần chạy lại OCR/dịch/render chỉ để tiếp tục sửa chữ.
+- Editor có nút **◀ / ▶** bên trên danh sách ảnh bên phải. Chọn trang trong danh sách cũng chuyển trang. Chức năng lưu tự động của editor được thực hiện khi chuyển trang, rời Editor và đóng app nếu có chỉnh sửa chưa lưu. Nút **Save** vẫn có thể dùng để lưu thủ công.
+- Trên thanh công cụ Editor có nút **so sánh ảnh gốc / bản đã chỉnh sửa** (hai khung). Nhấn lần nữa để trở lại chế độ chỉnh sửa trước đó. Menu **Display Mode → Compare with Original (Two Panels)** vẫn hoạt động.
+- Ứng dụng lưu trang đang chỉnh sửa gần nhất của từng dự án trong `config/ocr_workspace_projects.json`. Khi bấm **Mở / tiếp tục chỉnh sửa** sau khi khởi động lại, nó mở đúng trang đã dùng gần nhất nếu file RAW còn tồn tại. Việc mở lại không làm phát sinh lần render mới.
+
+Dữ liệu **chỉnh sửa** nằm trong các sidecar JSON và tài nguyên `manga_translator_work`. Ảnh **render xuất** là sản phẩm cuối, không phải dự án chỉnh sửa. Hãy giữ cả ảnh RAW và thư mục `manga_translator_work` khi chuyển máy hoặc sao lưu.
+
+Nếu chưa tạo mask/inpaint cho trang lần đầu, Editor vẫn có thể hiển thị ảnh RAW và dữ liệu OCR/Translation, nhưng có thể cần render trước để thấy ảnh đã xóa chữ hoàn chỉnh.
+
 ## Two-pane workflow
 
 - Left: region number, editable OCR text, editable translation.

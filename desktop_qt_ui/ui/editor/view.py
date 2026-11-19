@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from qfluentwidgets import (
+    BodyLabel,
     CardWidget,
     LineEdit,
     PopUpAniStackedWidget,
@@ -175,6 +176,9 @@ class EditorView(QWidget):
         self.add_folder_button: PushButton | None = None
         self.clear_list_button: PushButton | None = None
         self.file_list: FileListView | None = None
+        self.previous_page_button: PushButton | None = None
+        self.next_page_button: PushButton | None = None
+        self.page_position_label: BodyLabel | None = None
 
         # 设置controller的view引用，用于更新UI状态
         self.controller.set_view(self)
@@ -518,6 +522,7 @@ class EditorView(QWidget):
         # 文件项文本不需要重建，语言切换时只需重绘空列表占位提示。
         if self.file_list is not None:
             self.file_list.refresh_empty_state_text()
+        self._refresh_page_navigation()
 
     def _apply_initial_splitter_sizes(self):
         """用左栏的实际 sizeHint 作为初始宽度，而不是写死常量。"""
@@ -901,6 +906,8 @@ class EditorView(QWidget):
             (self.clear_list_button.clicked, self.logic.clear_list),
             (self.file_list.file_remove_requested, self._on_file_remove_requested),
             (self.file_list.file_selected, self.logic.load_image_into_editor),
+            (self.previous_page_button.clicked, lambda: self.logic.navigate_page(-1)),
+            (self.next_page_button.clicked, lambda: self.logic.navigate_page(1)),
             (self.file_list.files_dropped, self.logic.add_files_from_paths),
             (self.logic.file_list_loading, self.file_list.set_loading),
             (self.logic.file_snapshot_changed, self.file_list.set_snapshot),
@@ -1078,6 +1085,12 @@ class EditorView(QWidget):
             self.rich_text_editor.layout_size_changed.connect(
                 self._position_rich_text_editor_for_selection
             )
+        self.logic.file_snapshot_changed.connect(
+            lambda _snapshot: self._refresh_page_navigation()
+        )
+        self.model.compare_image_changed.connect(
+            lambda _image: self._refresh_page_navigation()
+        )
         self.app_logic.render_setting_changed.connect(
             self.controller.handle_global_render_setting_change
         )
@@ -1174,6 +1187,24 @@ class EditorView(QWidget):
         file_buttons_layout.addStretch()
         right_layout.addWidget(file_button_widget)
 
+        # Quick navigation follows the current editor source catalog.
+        page_navigation = QWidget(right_panel)
+        nav_layout = QHBoxLayout(page_navigation)
+        nav_layout.setContentsMargins(8, 0, 8, 0)
+        nav_layout.setSpacing(6)
+        self.previous_page_button = PushButton("◀")
+        self.previous_page_button.setToolTip("Trang trước")
+        self.page_position_label = BodyLabel("0 / 0")
+        self.next_page_button = PushButton("▶")
+        self.next_page_button.setToolTip("Trang sau")
+        nav_layout.addWidget(self.previous_page_button)
+        nav_layout.addStretch(1)
+        nav_layout.addWidget(self.page_position_label)
+        nav_layout.addStretch(1)
+        nav_layout.addWidget(self.next_page_button)
+        right_layout.addWidget(page_navigation)
+        self._refresh_page_navigation()
+
         # 文件列表
         file_list_card = CardWidget()
         file_list_layout = QVBoxLayout(file_list_card)
@@ -1188,6 +1219,23 @@ class EditorView(QWidget):
         right_layout.addWidget(file_list_card, 1)
 
         return right_panel
+
+    def _refresh_page_navigation(self):
+        files = [item.path for item in self.logic.file_model.files]
+        current = self.model.get_source_image_path()
+        from services.file_list_data_service import canonical_path_key
+
+        current_key = canonical_path_key(current) if current else None
+        index = next(
+            (i for i, path in enumerate(files) if canonical_path_key(path) == current_key),
+            -1,
+        )
+        if self.page_position_label is not None:
+            self.page_position_label.setText(f"{index + 1 if index >= 0 else 0} / {len(files)}")
+        if self.previous_page_button is not None:
+            self.previous_page_button.setEnabled(index > 0)
+        if self.next_page_button is not None:
+            self.next_page_button.setEnabled(0 <= index < len(files) - 1)
 
     @pyqtSlot(str)
     def _on_file_remove_requested(self, file_path: str):

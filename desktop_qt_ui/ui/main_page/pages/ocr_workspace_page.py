@@ -6,7 +6,7 @@ import re
 import shutil
 from typing import Any
 
-from PyQt6.QtCore import Qt, QRectF, QUrl
+from PyQt6.QtCore import Qt, QRectF, QUrl, pyqtSignal
 from PyQt6.QtGui import QBrush, QPainter, QPen, QPixmap, QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
@@ -147,6 +147,8 @@ class OCRWorkspacePanel(QWidget):
     normal Translation page's global file sources.
     """
 
+    editor_requested = pyqtSignal(str, str)
+
     def __init__(self, controller, t_func=lambda value: value, parent=None):
         super().__init__(parent)
         self.controller = controller
@@ -194,11 +196,14 @@ class OCRWorkspacePanel(QWidget):
         self.remove_project_button = PushButton("Bỏ khỏi danh sách")
         self.import_subfolders_button = PushButton("Thêm thư mục con")
         self.open_output_button = PushButton("Mở ảnh đã render")
+        self.open_editor_button = PrimaryPushButton("Mở / tiếp tục chỉnh sửa")
+        self.open_editor_button.setIcon(FIF.EDIT)
         project_row.addWidget(self.project_title)
         project_row.addWidget(self.project_combo, 1)
         project_row.addWidget(self.import_subfolders_button)
         project_row.addWidget(self.remove_project_button)
         project_row.addWidget(self.open_output_button)
+        project_row.addWidget(self.open_editor_button)
 
         source_row = QHBoxLayout()
         source_row.setSpacing(6)
@@ -229,6 +234,7 @@ class OCRWorkspacePanel(QWidget):
         self.save_button = PrimaryPushButton(self._t("Save JSON"))
         self.export_button = PushButton(self._t("Export Batch TXT"))
         self.render_batch_button = PushButton("Render trang đã đổi")
+        self.render_all_button = PushButton("Render toàn bộ trang đã dịch")
         self.render_current_button = PushButton("Render trang đang chọn")
 
         edit_row.addWidget(self.copy_all_button)
@@ -239,6 +245,7 @@ class OCRWorkspacePanel(QWidget):
         edit_row.addWidget(self.export_button)
         edit_row.addWidget(self.render_current_button)
         edit_row.addWidget(self.render_batch_button)
+        edit_row.addWidget(self.render_all_button)
         toolbar_layout.addLayout(project_row)
         toolbar_layout.addLayout(source_row)
         toolbar_layout.addLayout(edit_row)
@@ -318,6 +325,7 @@ class OCRWorkspacePanel(QWidget):
         self.remove_project_button.clicked.connect(self._remove_project)
         self.import_subfolders_button.clicked.connect(self._add_child_projects)
         self.open_output_button.clicked.connect(self._open_output_folder)
+        self.open_editor_button.clicked.connect(self._open_editor)
         self.project_combo.currentIndexChanged.connect(self._on_project_changed)
         self.scan_button.clicked.connect(self._scan_project)
         self.refresh_button.clicked.connect(self.refresh_sources)
@@ -331,6 +339,7 @@ class OCRWorkspacePanel(QWidget):
         self.export_button.clicked.connect(self.export_batch_txt)
         self.render_batch_button.clicked.connect(self._render_batch)
         self.render_current_button.clicked.connect(self._render_current)
+        self.render_all_button.clicked.connect(self._render_all)
 
         self.controller.file_sources_changed.connect(self.refresh_sources)
         self.controller.task_completed.connect(self._on_task_completed)
@@ -339,6 +348,7 @@ class OCRWorkspacePanel(QWidget):
     def _on_busy_changed(self, busy: bool):
         for widget in (
             self.scan_button, self.render_batch_button, self.render_current_button,
+            self.render_all_button, self.open_editor_button,
             self.project_combo, self.add_folder_button, self.import_subfolders_button,
             self.remove_project_button, self.add_files_button, self.table, self.save_button,
         ):
@@ -426,6 +436,19 @@ class OCRWorkspacePanel(QWidget):
         self.projects.remove(folder)
         self.current_image_path = None
         self.refresh_sources()
+
+    def _open_editor(self):
+        """Open the complete OCR project in the editor, not just the last render batch."""
+        folder = self.projects.active
+        if not folder or not self.image_paths:
+            QMessageBox.information(self, "OCR Workspace", "Hãy chọn dự án có ảnh trước.")
+            return
+        if self.controller.state_manager.is_translating():
+            return
+        if self._dirty and not self.save_current():
+            return
+        selected_page = self.projects.last_editor_page(folder) or self.current_image_path or self.image_paths[0]
+        self.editor_requested.emit(folder, selected_page)
 
     def _open_output_folder(self):
         folder = self.projects.active
@@ -553,6 +576,8 @@ class OCRWorkspacePanel(QWidget):
                 self.page_combo.blockSignals(False)
             return
         self.load_page(self.image_paths[index])
+        if self.projects.active:
+            self.projects.remember_editor_page(self.projects.active, self.image_paths[index])
 
     def _clear_page(self):
         self.current_image_path = None
@@ -864,7 +889,11 @@ class OCRWorkspacePanel(QWidget):
     def _render_current(self):
         self._render_pages(only_current=True)
 
-    def _render_pages(self, *, only_current: bool):
+    def _render_all(self):
+        """Force render all translated pages even if a prior output is cached."""
+        self._render_pages(only_current=False, force_all=True)
+
+    def _render_pages(self, *, only_current: bool, force_all: bool = False):
         """Reuse successful exports and only render changed JSON / render settings."""
         if self.controller.state_manager.is_translating():
             return
@@ -900,7 +929,7 @@ class OCRWorkspacePanel(QWidget):
             except OSError:
                 continue
             # Force the selected page on explicit user request; batch uses cache.
-            if not only_current and self.projects.cached(cache, image, signature):
+            if not only_current and not force_all and self.projects.cached(cache, image, signature):
                 skipped += 1
                 continue
             candidates.append(image)

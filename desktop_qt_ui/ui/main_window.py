@@ -114,6 +114,7 @@ class MainWindow(FluentWindow):
         self._main_catalog_generation = 0
         self._main_catalog_loading = False
         self._pending_editor_open = None
+        self._active_ocr_editor_project = None
         ServiceManager.register_service("app_logic", self.app_logic)
         self.editor_model = None
         self.editor_controller = None
@@ -134,6 +135,7 @@ class MainWindow(FluentWindow):
         self._main_navigation_items = {}
         self._register_main_interfaces()
         self._ensure_editor_initialized()
+        self._previous_page_widget = self.stacked_widget.currentWidget()
         self.stacked_widget.currentChanged.connect(self._on_fluent_page_changed)
 
     def _register_main_interfaces(self):
@@ -208,6 +210,13 @@ class MainWindow(FluentWindow):
 
     def _on_fluent_page_changed(self, index: int):
         widget = self.stacked_widget.widget(index)
+        previous = getattr(self, "_previous_page_widget", None)
+        self._previous_page_widget = widget
+        if previous is self.editor_view and widget is not self.editor_view:
+            if not self._save_editor_if_modified():
+                # Do not discard uncommitted edits on navigation failure.
+                QTimer.singleShot(0, lambda: self.switchTo(self.editor_view))
+                return
         page_key = getattr(self, "_main_pages_by_widget", {}).get(widget)
         if page_key:
             self._on_main_page_activated(page_key)
@@ -229,7 +238,10 @@ class MainWindow(FluentWindow):
                 self.main_view.rich_text_rules_editor_panel.refresh()
         elif page_key == "ocr_workspace":
             if hasattr(self.main_view, "ocr_workspace_panel"):
-                self.main_view.ocr_workspace_panel.refresh_sources()
+                panel = self.main_view.ocr_workspace_panel
+                panel.refresh_sources()
+                if panel.current_image_path and not panel._dirty:
+                    panel.load_page(panel.current_image_path, force=True)
         elif page_key == "batch_edit":
             if hasattr(self.main_view, "batch_edit_panel"):
                 self.main_view.batch_edit_panel.set_catalog_snapshot(
@@ -446,6 +458,9 @@ class MainWindow(FluentWindow):
         self.main_view.setting_changed.connect(self.app_logic.update_single_config)
         self.main_view.env_var_changed.connect(self.app_logic.save_env_var)
         self.main_view.editor_view_requested.connect(self.switch_to_editor_view)
+        self.main_view.ocr_workspace_panel.editor_requested.connect(
+            self._open_ocr_project_in_editor
+        )
         self.main_view.theme_change_requested.connect(self._change_theme)
         self.main_view.language_change_requested.connect(
             self._change_language, type=Qt.ConnectionType.QueuedConnection
@@ -684,8 +699,11 @@ class MainWindow(FluentWindow):
             if not saved_files:
                 return
 
-            # 翻译会新建/更新 JSON 元数据；先刷新完整快照，编辑器打开请求会自动等待。
-            self._request_main_file_snapshot()
+            # OCR Workspace has an independent project catalog; never replace it
+            # with the global Translation page catalog on render completion.
+            workflow = getattr(self.app_logic, "last_completed_workflow", None)
+            if workflow != "ocr_workspace_render":
+                self._request_main_file_snapshot()
 
             if not self._should_prompt_open_results_in_editor():
                 return
@@ -711,7 +729,10 @@ class MainWindow(FluentWindow):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
-                self.enter_editor_mode(files_to_load=saved_files)
+                if workflow == "ocr_workspace_render":
+                    self._open_ocr_project_in_editor()
+                else:
+                    self.enter_editor_mode(files_to_load=saved_files)
         except Exception as e:
             self.logger.error(f"Error in on_task_completed: {e}", exc_info=True)
             import traceback
@@ -810,6 +831,72 @@ class MainWindow(FluentWindow):
         except Exception as exc:
             self.logger.error(f"_show_config_write_failed error: {exc}", exc_info=True)
 
+    def _remember_ocr_editor_page(self) -> None:
+        folder = self._active_ocr_editor_project
+        image = self.editor_model.get_source_image_path() if self.editor_model else None
+        panel = getattr(self.main_view, "ocr_workspace_panel", None)
+        if folder and image and panel is not None:
+            try:
+                panel.projects.remember_editor_page(folder, image)
+            except OSError:
+                self.logger.exception("Could not persist the last OCR editor page")
+
+    def _save_editor_if_modified(self) -> bool:
+        """Persist pending region/overlay edits before leaving the editor."""
+        if not self.editor_view or not self.editor_controller or not self.editor_model:
+            return True
+        if not self.editor_model.get_source_image_path():
+            return True
+        try:
+            self.editor_view.force_save_property_panel_edits()
+            if self.editor_view.rich_text_editor is not None:
+                self.editor_view.rich_text_editor.flush_pending_changes()
+            self.editor_controller.commit_pending_edits()
+            if self.editor_controller.export_service.has_unsaved_changes():
+                if not self.editor_controller.save_editor_state():
+                    return False
+            self._remember_ocr_editor_page()
+            return True
+        except Exception:
+            self.logger.exception("Cannot save the active editor page")
+            return False
+
+    @pyqtSlot(str, str)
+    def _open_ocr_project_in_editor(self, folder: str = "", selected_page: str = ""):
+        """Load all RAW pages of an OCR project, preserving existing edits."""
+        panel = getattr(self.main_view, "ocr_workspace_panel", None)
+        if not folder and panel is not None:
+            folder = panel.projects.active or ""
+            selected_page = (
+                panel.projects.last_editor_page(folder) or panel.current_image_path or ""
+            )
+        if not folder or not os.path.isdir(folder):
+            return
+        if not self._save_editor_if_modified():
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Editor", "Không lưu được chỉnh sửa đang mở. Hãy thử lưu lại.")
+            return
+        self._ensure_editor_initialized()
+        if not selected_page and panel is not None:
+            selected_page = panel.projects.last_editor_page(folder) or panel.current_image_path or ""
+        images = (
+            list(panel.image_paths)
+            if panel is not None and panel.projects.active
+            and os.path.normcase(os.path.abspath(folder))
+            == os.path.normcase(os.path.abspath(panel.projects.active))
+            else None
+        )
+        try:
+            self.editor_logic.open_project_folder(
+                folder, selected_page or None, project_images=images
+            )
+        except (OSError, ValueError) as exc:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Editor", str(exc))
+            return
+        self._active_ocr_editor_project = os.path.abspath(folder)
+        self.switchTo(self.editor_view)
+
     def switch_to_editor_view(self):
         """
         Simply switches to the editor view without reloading file lists.
@@ -818,6 +905,11 @@ class MainWindow(FluentWindow):
         self._ensure_editor_initialized()
         if self.editor_view and self.editor_view.property_panel:
             self.editor_view.property_panel.repopulate_options()
+        if not self.editor_model.get_source_image_path():
+            panel = getattr(self.main_view, "ocr_workspace_panel", None)
+            if panel is not None and panel.projects.active and panel.image_paths:
+                self._open_ocr_project_in_editor()
+                return
         self.switchTo(self.editor_view)
 
     def enter_editor_mode(self, file_to_load: str = None, files_to_load: list = None):
@@ -850,6 +942,7 @@ class MainWindow(FluentWindow):
                 self.switchTo(self.editor_view)
                 return
 
+            self._active_ocr_editor_project = None
             editor_snapshot = self._file_catalog_snapshot.images_only()
             self.editor_logic.apply_file_snapshot(
                 editor_snapshot,
@@ -898,6 +991,11 @@ class MainWindow(FluentWindow):
 
     def closeEvent(self, event):
         """处理窗口关闭事件"""
+        if not self._save_editor_if_modified():
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Editor", "Không thể lưu chỉnh sửa. Cửa sổ sẽ không đóng.")
+            event.ignore()
+            return
         if hasattr(self, "main_view") and hasattr(self.main_view, "update_checker"):
             self.main_view.update_checker.stop()
         unfinished_exports = 0

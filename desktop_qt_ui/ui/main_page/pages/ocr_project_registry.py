@@ -94,6 +94,7 @@ class OCRProjectRegistry:
         self.index_path = Path(app_root) / "config" / "ocr_workspace_projects.json"
         self.folders: list[str] = []
         self.active: str | None = None
+        self.last_editor_pages: dict[str, str] = {}
         self._load()
 
     def _load(self) -> None:
@@ -112,14 +113,37 @@ class OCRProjectRegistry:
                 (item for item in self.folders if active and path_key(item) == path_key(active)),
                 self.folders[0] if self.folders else None,
             )
+            recent = raw.get("last_editor_pages", {})
+            if isinstance(recent, dict):
+                self.last_editor_pages = {
+                    path_key(folder): norm_path(image)
+                    for folder, image in recent.items()
+                    if isinstance(folder, str) and isinstance(image, str)
+                }
         except (OSError, ValueError, TypeError, KeyError):
             self.folders = []
             self.active = None
+            self.last_editor_pages = {}
 
     def _save(self) -> None:
         atomic_json(self.index_path, {
-            "version": 1, "folders": self.folders, "active": self.active,
+            "version": 2, "folders": self.folders, "active": self.active,
+            "last_editor_pages": self.last_editor_pages,
         })
+
+    def last_editor_page(self, folder: str | Path) -> str | None:
+        image = self.last_editor_pages.get(path_key(folder))
+        return image if image and within(image, folder) and os.path.isfile(image) else None
+
+    def remember_editor_page(self, folder: str | Path, image: str | Path) -> None:
+        """Persist last opened RAW page; never store paths outside its project."""
+        if not within(image, folder) or not os.path.isfile(image):
+            return
+        key = path_key(folder)
+        page = norm_path(image)
+        if self.last_editor_pages.get(key) != page:
+            self.last_editor_pages[key] = page
+            self._save()
 
     def add(self, folder: str | Path) -> str:
         path = norm_path(folder)
@@ -169,6 +193,7 @@ class OCRProjectRegistry:
         matching = next((item for item in self.folders if path_key(item) == path_key(path)), None)
         if matching is not None:
             self.folders.remove(matching)
+            self.last_editor_pages.pop(path_key(matching), None)
             if self.active == matching:
                 self.active = self.folders[0] if self.folders else None
             self._save()
