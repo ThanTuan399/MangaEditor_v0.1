@@ -867,7 +867,9 @@ class MainWindow(FluentWindow):
         panel = getattr(self.main_view, "ocr_workspace_panel", None)
         if not folder and panel is not None:
             folder = panel.projects.active or ""
-            selected_page = panel.current_image_path or ""
+            selected_page = (
+                panel.projects.last_editor_page(folder) or panel.current_image_path or ""
+            )
         if not folder or not os.path.isdir(folder):
             return
         if not self._save_editor_if_modified():
