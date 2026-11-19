@@ -252,6 +252,10 @@ class OpenAITranslator(CommonTranslator):
         """获取完整的系统提示词"""
         return self._build_system_prompt(source_lang, target_lang, custom_prompt_json=custom_prompt_json, line_break_prompt_json=line_break_prompt_json, retry_attempt=retry_attempt, retry_reason=retry_reason, extract_glossary=extract_glossary)
 
+    def _parse_translation_response(self, result_text: str, expected_count: int):
+        """Default parser; local backends may enforce a stricter result schema."""
+        return parse_hq_response(result_text)
+
     async def _translate_batch(self, texts: List[str], source_lang: str, target_lang: str, custom_prompt_json: Dict[str, Any] = None, line_break_prompt_json: Dict[str, Any] = None, ctx: Any = None, split_level: int = 0) -> List[str]:
         """批量翻译方法（纯文本）"""
         if not texts:
@@ -444,7 +448,7 @@ class OpenAITranslator(CommonTranslator):
                              result_text = result_text.strip("`").strip()
                     
                     # 使用通用函数解析响应（支持JSON和纯文本）
-                    translations, new_terms = parse_hq_response(result_text)
+                    translations, new_terms = self._parse_translation_response(result_text, len(texts))
                     
                     # 处理提取到的术语
                     if extract_glossary and new_terms:
