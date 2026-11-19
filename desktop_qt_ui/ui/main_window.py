@@ -238,7 +238,10 @@ class MainWindow(FluentWindow):
                 self.main_view.rich_text_rules_editor_panel.refresh()
         elif page_key == "ocr_workspace":
             if hasattr(self.main_view, "ocr_workspace_panel"):
-                self.main_view.ocr_workspace_panel.refresh_sources()
+                panel = self.main_view.ocr_workspace_panel
+                panel.refresh_sources()
+                if panel.current_image_path and not panel._dirty:
+                    panel.load_page(panel.current_image_path, force=True)
         elif page_key == "batch_edit":
             if hasattr(self.main_view, "batch_edit_panel"):
                 self.main_view.batch_edit_panel.set_catalog_snapshot(
@@ -874,8 +877,17 @@ class MainWindow(FluentWindow):
         self._ensure_editor_initialized()
         if not selected_page and panel is not None:
             selected_page = panel.projects.last_editor_page(folder) or panel.current_image_path or ""
+        images = (
+            list(panel.image_paths)
+            if panel is not None and panel.projects.active
+            and os.path.normcase(os.path.abspath(folder))
+            == os.path.normcase(os.path.abspath(panel.projects.active))
+            else None
+        )
         try:
-            self.editor_logic.open_project_folder(folder, selected_page or None)
+            self.editor_logic.open_project_folder(
+                folder, selected_page or None, project_images=images
+            )
         except (OSError, ValueError) as exc:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Editor", str(exc))
