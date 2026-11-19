@@ -299,6 +299,7 @@ class TranslatorConfig(BaseModel):
 
     # Ollama is a separate local translator; it never reads OpenAI keys.
     ollama_model: str = "qwen3:4b"
+    ollama_batch_size: int = 3
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
     ollama_disable_thinking: bool = True
     ollama_streaming: bool = False
