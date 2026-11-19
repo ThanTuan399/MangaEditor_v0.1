@@ -54,7 +54,7 @@ class OllamaTranslator(OpenAITranslator):
         # General CLI defaults to unlimited retries; an offline local server
         # must fail promptly rather than retry forever on connection errors.
         if self.attempts == -1:
-            self.attempts = 3
+            self.attempts = 2  # two retries plus the initial request = 3 total
         self._max_total_attempts = self._resolve_max_total_attempts()
         self._runtime_api_settings = None
         old_identity = (self.base_url, self.model)
