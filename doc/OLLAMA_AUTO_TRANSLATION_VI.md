@@ -19,12 +19,21 @@ Chức năng này **không sửa** luồng OCR Workspace thủ công của giai 
 3. Trong nhóm translator, kiểm tra các trường:
    - **Ollama model**: `qwen3:4b` (phải khớp với tên trong `ollama list`).
    - **Ollama API URL**: `http://127.0.0.1:11434/v1`.
+   - **Ollama: text regions per API request**: `3` (mặc định, có thể giảm xuống `1` khi model yếu).
    - **Ollama: disable thinking**: bật (mặc định, giảm phần suy luận không cần thiết khi dịch).
    - **Ollama: streaming response**: tắt (mặc định; có thể bật sau khi thử nghiệm).
 4. Trở về **Normal Translation**, nhấn **Kiểm tra Ollama**. Thông báo kết nối thành công và tên model sẽ xuất hiện bên cạnh nút.
 5. Chọn ngôn ngữ đích **VIN**, chọn detector/OCR/inpainter/renderer như trước.
 6. Thêm toàn bộ ảnh hoặc thư mục chương truyện, đặt output folder rồi chọn **Normal Translation → Start Translation**.
 7. Khi hoàn thành, mở toàn bộ trang trong Editor. Tính năng nhiều trang và resume của Phase 1 vẫn được giữ nguyên.
+
+## Khắc phục lỗi Translation count mismatch (expected 18, got 100)
+
+Từ bản vá Phase 2, bộ dịch Ollama **tự chia nhỏ** 18 vùng chữ thành nhóm tối đa 3 vùng mỗi lượt; xác minh ID và số kết quả khi đọc JSON. Khi Ollama trả thừa/thiếu, nhóm đó sẽ được chia đôi và dịch lại theo thứ tự cho đến khi dịch từng vùng riêng lẻ, không lấy bừa 18/100 mục. Thao tác này được áp dụng tự động, bạn không cần tăng Retry Count lên 10 hoặc -1.
+
+Nếu model vẫn không xuất ra bản dịch hợp lệ cho **một vùng** sau số lần thử cho phép, ứng dụng sẽ báo lỗi rõ ràng để bạn chọn model khác hoặc gửi log; tuyệt đối không ghi bản dịch sai vào JSON.
+
+Để dùng bản vá trên nhánh này: đóng ứng dụng, `git fetch origin feat/ollama-auto-translation`, `git pull --ff-only origin feat/ollama-auto-translation` nếu bạn đang ở chính nhánh đó, sau đó khởi động lại `Win-Start.bat`.
 
 ## Lưu ý cấu hình
 
@@ -34,7 +43,7 @@ Chức năng này **không sửa** luồng OCR Workspace thủ công của giai 
 - API URL chỉ chấp nhận `http://localhost`, `http://127.0.0.1` hoặc `http://[::1]` với hậu tố `/v1`. Không thể vô tình gửi manga sang API bên ngoài trong chế độ Ollama.
 - Nút thử kết nối gọi `GET /v1/models` trên một luồng riêng, không phát sinh dịch và không tải mô hình qua mạng ngoài.
 - Nếu model chưa có: `ollama pull <tên-model>`. Nếu không thấy server: mở Ollama hoặc thử `ollama serve`.
-- Giới hạn retry mặc định của Ollama là **3 lần**, tránh vòng lặp vô tận khi server không khả dụng. Cài đặt retry CLI cụ thể vẫn được tôn trọng.
+- Giới hạn mặc định mỗi nhóm Ollama là **3 lần gọi** (lần đầu + 2 retry); khi sai số lượng, ứng dụng tự tách nhóm. Không đặt retry thành vô hạn. Cài đặt retry CLI cụ thể vẫn được tôn trọng.
 - Thay đổi model, API URL hoặc tuỳ chọn thinking tại Settings rồi thử kết nối lại trước khi dịch.
 - `ollama_streaming` mặc định tắt để ổn định cho các phản hồi JSON nhiều vùng thoại; bật được nếu máy và model hỗ trợ.
 
