@@ -216,5 +216,10 @@ def test_workspace_render_cache_skips_unchanged_pages(tmp_path, monkeypatch):
     panel._render_batch()
     assert len(controller.started) == 2
     assert controller.started[-1]["project_images"] == [str(images[0])]
+
+    # Explicit render-all must bypass the incremental render cache.
+    panel._render_all()
+    assert len(controller.started) == 3
+    assert controller.started[-1]["project_images"] == [str(images[0]), str(images[1])]
     panel.close()
     app.processEvents()
