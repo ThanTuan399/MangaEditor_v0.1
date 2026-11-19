@@ -1382,6 +1382,7 @@ class MainAppLogic(QObject):
                     "letter_spacing": self._t("label_letter_spacing"),
                     "font_size": self._t("label_font_size"),
                     "ollama_model": "Ollama model (ollama list)",
+                    "ollama_batch_size": "Ollama: text regions per API request (1-8)",
                     "ollama_base_url": "Ollama API URL (local /v1)",
                     "ollama_disable_thinking": "Ollama: disable thinking",
                     "ollama_streaming": "Ollama: streaming response",
