@@ -114,6 +114,7 @@ class MainWindow(FluentWindow):
         self._main_catalog_generation = 0
         self._main_catalog_loading = False
         self._pending_editor_open = None
+        self._active_ocr_editor_project = None
         ServiceManager.register_service("app_logic", self.app_logic)
         self.editor_model = None
         self.editor_controller = None
@@ -827,6 +828,16 @@ class MainWindow(FluentWindow):
         except Exception as exc:
             self.logger.error(f"_show_config_write_failed error: {exc}", exc_info=True)
 
+    def _remember_ocr_editor_page(self) -> None:
+        folder = self._active_ocr_editor_project
+        image = self.editor_model.get_source_image_path() if self.editor_model else None
+        panel = getattr(self.main_view, "ocr_workspace_panel", None)
+        if folder and image and panel is not None:
+            try:
+                panel.projects.remember_editor_page(folder, image)
+            except OSError:
+                self.logger.exception("Could not persist the last OCR editor page")
+
     def _save_editor_if_modified(self) -> bool:
         """Persist pending region/overlay edits before leaving the editor."""
         if not self.editor_view or not self.editor_controller or not self.editor_model:
@@ -839,7 +850,9 @@ class MainWindow(FluentWindow):
                 self.editor_view.rich_text_editor.flush_pending_changes()
             self.editor_controller.commit_pending_edits()
             if self.editor_controller.export_service.has_unsaved_changes():
-                return bool(self.editor_controller.save_editor_state())
+                if not self.editor_controller.save_editor_state():
+                    return False
+            self._remember_ocr_editor_page()
             return True
         except Exception:
             self.logger.exception("Cannot save the active editor page")
@@ -859,12 +872,15 @@ class MainWindow(FluentWindow):
             QMessageBox.warning(self, "Editor", "Không lưu được chỉnh sửa đang mở. Hãy thử lưu lại.")
             return
         self._ensure_editor_initialized()
+        if not selected_page and panel is not None:
+            selected_page = panel.projects.last_editor_page(folder) or panel.current_image_path or ""
         try:
             self.editor_logic.open_project_folder(folder, selected_page or None)
         except (OSError, ValueError) as exc:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Editor", str(exc))
             return
+        self._active_ocr_editor_project = os.path.abspath(folder)
         self.switchTo(self.editor_view)
 
     def switch_to_editor_view(self):
@@ -912,6 +928,7 @@ class MainWindow(FluentWindow):
                 self.switchTo(self.editor_view)
                 return
 
+            self._active_ocr_editor_project = None
             editor_snapshot = self._file_catalog_snapshot.images_only()
             self.editor_logic.apply_file_snapshot(
                 editor_snapshot,
