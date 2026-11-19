@@ -232,6 +232,48 @@ class EditorLogic(QObject):
             self.config_service.save_config_file()
         return selected_path
 
+    def open_project_folder(self, folder: str, selected_image: str | None = None) -> None:
+        """Replace the editor catalog with a single OCR project folder.
+
+        The asynchronous catalog excludes manga_translator_work; images are loaded
+        from their RAW paths, and existing editor JSON/inpaint sidecars are reused.
+        """
+        normalized = os.path.abspath(os.path.normpath(folder))
+        if not os.path.isdir(normalized):
+            raise ValueError(f"Project directory does not exist: {normalized}")
+        target = None
+        if selected_image:
+            candidate = os.path.abspath(os.path.normpath(selected_image))
+            if self._path_is_within(candidate, normalized) and os.path.isfile(candidate):
+                target = candidate
+        self._set_sources([normalized], {canonical_path_key(normalized)})
+        self._excluded_folders.clear()
+        self._excluded_files.clear()
+        self._source_by_key.clear()
+        self._pending_load_path = target
+        self._load_first_after_snapshot = target is None
+        self._request_snapshot()
+
+    def adjacent_page_path(self, step: int) -> str | None:
+        """Find the neighboring source page without mixing OCR projects."""
+        files = [item.path for item in self.file_model.files]
+        current = self.controller.model.get_source_image_path()
+        if not current or not files:
+            return None
+        key = canonical_path_key(current)
+        for index, path in enumerate(files):
+            if canonical_path_key(path) == key:
+                next_index = index + step
+                return files[next_index] if 0 <= next_index < len(files) else None
+        return None
+
+    def navigate_page(self, step: int) -> bool:
+        target = self.adjacent_page_path(step)
+        if target is None:
+            return False
+        self.load_image_into_editor(target)
+        return True
+
     @pyqtSlot()
     def open_and_add_files(self):
         """Opens a file dialog to add files to the editor's list."""
