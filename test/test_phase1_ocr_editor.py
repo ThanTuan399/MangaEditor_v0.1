@@ -169,3 +169,67 @@ def test_leaving_editor_saves_dirty_state_and_preserves_clean_state():
     assert len(saved) == 1  # Avoid needlessly rewriting JSON and invalidating cache.
     assert len(remembered) == 2
     assert len(committed) == 2
+
+
+def test_editor_reopen_uses_last_project_page_not_initial_ocr_selection(tmp_path):
+    project = tmp_path / "chapter"
+    project.mkdir()
+    first = project / "001.webp"
+    last = project / "006.webp"
+    first.touch()
+    last.touch()
+
+    calls = []
+    panel = SimpleNamespace(
+        projects=SimpleNamespace(
+            active=str(project),
+            last_editor_page=lambda folder: str(last),
+        ),
+        image_paths=[str(first), str(last)],
+        current_image_path=str(first),
+    )
+    fake = SimpleNamespace(
+        main_view=SimpleNamespace(ocr_workspace_panel=panel),
+        _save_editor_if_modified=lambda: True,
+        _ensure_editor_initialized=lambda: None,
+        editor_logic=SimpleNamespace(
+            open_project_folder=lambda *a, **kw: calls.append((a, kw))
+        ),
+        editor_view=object(),
+        switchTo=lambda view: None,
+    )
+    MainWindow._open_ocr_project_in_editor(fake)
+    assert calls == [
+        ((str(project), str(last)), {"project_images": [str(first), str(last)]})
+    ]
+    assert fake._active_ocr_editor_project == str(project)
+
+
+def test_editor_explicit_selection_takes_priority_over_resume(tmp_path):
+    project = tmp_path / "chapter"
+    project.mkdir()
+    first = project / "001.webp"
+    last = project / "006.webp"
+    first.touch()
+    last.touch()
+    selected = []
+    panel = SimpleNamespace(
+        projects=SimpleNamespace(
+            active=str(project),
+            last_editor_page=lambda folder: str(last),
+        ),
+        image_paths=[str(first), str(last)],
+        current_image_path=str(last),
+    )
+    fake = SimpleNamespace(
+        main_view=SimpleNamespace(ocr_workspace_panel=panel),
+        _save_editor_if_modified=lambda: True,
+        _ensure_editor_initialized=lambda: None,
+        editor_logic=SimpleNamespace(
+            open_project_folder=lambda _folder, page, **kw: selected.append(page)
+        ),
+        editor_view=object(),
+        switchTo=lambda view: None,
+    )
+    MainWindow._open_ocr_project_in_editor(fake, str(project), str(first))
+    assert selected == [str(first)]
