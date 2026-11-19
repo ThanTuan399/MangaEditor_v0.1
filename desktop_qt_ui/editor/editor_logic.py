@@ -232,7 +232,12 @@ class EditorLogic(QObject):
             self.config_service.save_config_file()
         return selected_path
 
-    def open_project_folder(self, folder: str, selected_image: str | None = None) -> None:
+    def open_project_folder(
+        self,
+        folder: str,
+        selected_image: str | None = None,
+        project_images: list[str] | None = None,
+    ) -> None:
         """Replace the editor catalog with a single OCR project folder.
 
         The asynchronous catalog excludes manga_translator_work; images are loaded
@@ -246,10 +251,27 @@ class EditorLogic(QObject):
             candidate = os.path.abspath(os.path.normpath(selected_image))
             if self._path_is_within(candidate, normalized) and os.path.isfile(candidate):
                 target = candidate
-        self._set_sources([normalized], {canonical_path_key(normalized)})
+        # Explicit OCR catalog prevents registered child projects or unrelated
+        # files from leaking into the editor. The normal folder path remains a
+        # fallback for callers that do not own a project image list.
+        if project_images is not None:
+            sources = [
+                os.path.abspath(os.path.normpath(path))
+                for path in project_images
+                if self._path_is_within(path, normalized)
+                and os.path.isfile(path)
+                and FileListModel.is_supported_image_file(path)
+            ]
+            if not sources:
+                raise ValueError(f"No supported images in OCR project: {normalized}")
+            self._set_sources(sources)
+        else:
+            self._set_sources([normalized], {canonical_path_key(normalized)})
         self._excluded_folders.clear()
         self._excluded_files.clear()
         self._source_by_key.clear()
+        if project_images is not None and target not in sources:
+            target = sources[0]
         self._pending_load_path = target
         self._load_first_after_snapshot = target is None
         self._request_snapshot()
