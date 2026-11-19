@@ -16,7 +16,7 @@ class OllamaProbeThread(QThread):
 
     def run(self):
         try:
-            message = check_ollama_connection(self.base_url, self.model)
+            message = check_ollama_connection(self.base_url, self.model, timeout=2.5)
         except (ConnectionError, ValueError) as exc:
             self.result.emit(False, str(exc))
         else:
