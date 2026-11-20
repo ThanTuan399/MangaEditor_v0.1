@@ -823,15 +823,18 @@ class MangaTranslator:
         elif preserved_skip_font_scaling is not None:
             data_to_save['skip_font_scaling'] = bool(preserved_skip_font_scaling)
 
-        # The renderer may temporarily wrap text and insert [BR] for layout,
-        # but dispatch_preserving_source restores the user's semantic text
-        # before JSON serialization. Re-apply replacements on each render
-        # rather than treating the ephemeral layout as already committed.
+        # Only the new guarded renderer guarantees that replacements and
+        # automatic [BR] were NOT committed to region.translation. Older
+        # pre-rendered payloads and direct callers still carry committed text,
+        # and must keep their previous skip_text_replacements=True behavior.
         if getattr(ctx, 'img_rendered', None) is not None:
-            data_to_save['render_text_source_version'] = 2
-            data_to_save['skip_text_replacements'] = bool(
-                getattr(ctx, 'skip_text_replacements', False)
-            )
+            if getattr(ctx, 'render_semantic_source_preserved', False):
+                data_to_save['render_text_source_version'] = 2
+                data_to_save['skip_text_replacements'] = bool(
+                    getattr(ctx, 'skip_text_replacements', False)
+                )
+            else:
+                data_to_save['skip_text_replacements'] = True
         
         # 添加超分和上色配置信息
         if config:
@@ -3389,6 +3392,8 @@ class MangaTranslator:
                 render_alpha=render_alpha,
                 bubble_mask=ctx.bubble_mask,
             )
+            # Only record source preservation after a successful render.
+            ctx.render_semantic_source_preserved = True
             
             # Handle debug image if returned
             if need_debug_img and isinstance(result, tuple):
