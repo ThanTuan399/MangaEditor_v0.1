@@ -160,6 +160,7 @@ def test_saved_rendered_json_keeps_semantic_text_and_replay_flags(tmp_path, monk
         mask=None,
         image_name=str(tmp_path / "page.png"),
         skip_text_replacements=False,
+        render_semantic_source_preserved=True,
     )
     self = SimpleNamespace(
         text_output_file=None, font_family="Arial",
