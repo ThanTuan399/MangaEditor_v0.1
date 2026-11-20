@@ -728,6 +728,10 @@ class EditorController(QObject):
 
         new_region_data = old_region_data.copy()
         new_region_data[field_name] = value
+        if field_name == 'direction':
+            # A direction selected in the editor is intentional, even when it
+            # differs from the target language's default writing direction.
+            new_region_data['direction_user_override'] = value in ('h', 'v')
 
         # 字体/译文等属性改变 → 同步白框尺寸（锚定正文中心），让 UI 立即跟上新字号。
         if field_name in _FONT_AFFECTING_FIELDS:
