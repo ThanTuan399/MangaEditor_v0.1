@@ -41,6 +41,8 @@ def repair_legacy_region_breaks(region: dict, image_data: dict) -> bool:
         return False
     if not image_data.get("skip_text_replacements", False):
         return False
+    if str(region.get("target_lang") or "").upper() != "VIN":
+        return False  # Never alter Chinese/Japanese source typography.
     original = region.get("translation")
     if not isinstance(original, str) or not original:
         return False
