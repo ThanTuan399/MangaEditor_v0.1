@@ -82,9 +82,13 @@ class DocumentLoadWorker:
 
             compare_image = futures["compare"].result()
 
-            regions, raw_mask, json_overlays = futures["json"].result()
-            inpaint_sidecar = self._load_inpaint_sidecar(
-                aux_paths["inpainted"], raw_mask, image_size
+            regions, raw_mask, json_overlays, repaired_mask = futures["json"].result()
+            # A sidecar produced from an old/incomplete mask is not valid for
+            # newly recovered OCR lines: recompute the inpainted background.
+            inpaint_sidecar = (
+                None if repaired_mask else self._load_inpaint_sidecar(
+                    aux_paths["inpainted"], raw_mask, image_size
+                )
             )
 
             paint_overlay_path, legacy_paint_overlay = futures["paint_overlay"].result()
@@ -138,7 +142,7 @@ class DocumentLoadWorker:
                 image_size,
             ),
             "json": executor.submit(
-                self._load_regions_and_mask, source_path, aux_paths["json"]
+                self._load_regions_and_mask, source_path, aux_paths["json"], image_size
             ),
             "paint_overlay": executor.submit(
                 self._load_paint_overlay_image, aux_paths["paint_overlay"], image_size
@@ -181,13 +185,27 @@ class DocumentLoadWorker:
             self.logger.warning(f"Error loading compare image: {compare_error}")
             return image
 
-    def _load_regions_and_mask(self, source_path: str, json_path: str | None):
+    def _load_regions_and_mask(
+        self, source_path: str, json_path: str | None, image_size=None
+    ):
         if not json_path:
-            return [], None, {}
+            return [], None, {}, False
         regions, raw_mask, _, overlays = (
             self.service.file_service.load_translation_json(source_path)
         )
-        return regions, raw_mask, overlays or {}
+        repaired = False
+        if image_size and regions:
+            from manga_translator.mask_refinement.region_polygon_mask import (
+                repair_missing_translation_masks,
+            )
+            width, height = image_size
+            try:
+                raw_mask, repaired = repair_missing_translation_masks(
+                    regions, (height, width), raw_mask
+                )
+            except (ValueError, TypeError) as exc:
+                self.logger.warning("Could not repair OCR mask in editor: %s", exc)
+        return regions, raw_mask, overlays or {}, repaired
 
     def _load_inpaint_sidecar(
         self,
