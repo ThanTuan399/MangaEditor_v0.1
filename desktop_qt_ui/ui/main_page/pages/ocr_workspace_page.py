@@ -164,6 +164,7 @@ class OCRWorkspacePanel(QWidget):
         self._dirty = False
         self._loading_table = False
         self._loading_manual_text = False
+        self._committing_manual_text = False
         app_root = getattr(getattr(controller, "config_service", None), "root_dir", None) or os.getcwd()
         self.projects = OCRProjectRegistry(app_root)
         # Preserve existing folders from the old global list on first launch,
@@ -779,7 +780,13 @@ class OCRWorkspacePanel(QWidget):
         if item is not None and item.text() != new:
             # ItemChanged applies the same data/translation_rich invalidation
             # path as direct table edits; no duplicate writeback.
-            item.setText(new)
+            # Do not reset the editor while a user is typing; QTextEdit would
+            # move the cursor to the beginning and lose undo context.
+            self._committing_manual_text = True
+            try:
+                item.setText(new)
+            finally:
+                self._committing_manual_text = False
 
     def _select_next_translation_region(self):
         if not self.current_regions:
@@ -824,7 +831,11 @@ class OCRWorkspacePanel(QWidget):
         self._dirty = True
         self.save_button.setText(self._t("Save JSON") + " *")
         self._update_manual_progress()
-        if item.column() == 2 and item.row() == self.table.currentRow():
+        if (
+            item.column() == 2
+            and item.row() == self.table.currentRow()
+            and not self._committing_manual_text
+        ):
             self._sync_selected_translation()
 
     def _sync_selected_translation(self):
