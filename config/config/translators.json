@@ -24,6 +24,11 @@
     "display_name": "Local NLLB (Offline)",
     "required_env_vars": []
   },
+  "ollama": {
+    "name": "ollama",
+    "display_name": "Ollama (Local · Qwen3)",
+    "required_env_vars": []
+  },
   "openai": {
     "name": "openai",
     "display_name": "OpenAI",

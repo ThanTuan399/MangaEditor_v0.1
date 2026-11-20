@@ -614,6 +614,7 @@ class OCRWorkspacePanel(QWidget):
         self.current_json_path = json_path if json_path and os.path.isfile(json_path) else None
         self.current_data = None
         self.current_regions = []
+        legacy_br_repaired = 0
 
         if self.current_json_path:
             try:
@@ -621,6 +622,10 @@ class OCRWorkspacePanel(QWidget):
                     self.current_data = json.load(handle)
                 image_data = self._image_data(self.current_data)
                 if image_data is not None:
+                    from manga_translator.rendering.legacy_break_repair import (
+                        repair_legacy_image_regions,
+                    )
+                    legacy_br_repaired = repair_legacy_image_regions(image_data)
                     regions = image_data.get("regions", [])
                     if isinstance(regions, list):
                         self.current_regions = regions
@@ -630,7 +635,10 @@ class OCRWorkspacePanel(QWidget):
                 )
 
         self._populate_table()
-        self._dirty = False
+        self._dirty = bool(legacy_br_repaired)
+        self.save_button.setText(
+            self._t("Save JSON") + (" *" if self._dirty else "")
+        )
 
         if self.current_json_path:
             self.status_label.setText(
@@ -854,6 +862,9 @@ class OCRWorkspacePanel(QWidget):
             return False
         image_data["regions"] = self.current_regions
         image_data["skip_font_scaling"] = False
+        # Once the translation cells have been reviewed/saved, future loads
+        # must not treat their intentional Enter/[BR] as legacy auto-wrapping.
+        image_data["render_text_source_version"] = 2
 
         tmp_path = self.current_json_path + ".ocr_workspace.tmp"
         backup_path = self.current_json_path + ".ocr_workspace.bak"

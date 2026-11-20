@@ -65,7 +65,7 @@ from .mask_refinement import dispatch as dispatch_mask_refinement
 from .ocr import dispatch as dispatch_ocr
 from .ocr import prepare as prepare_ocr
 from .ocr import unload as unload_ocr
-from .rendering import dispatch as dispatch_rendering
+from .rendering.text_source_preservation import dispatch_preserving_source as dispatch_rendering
 from .rendering.rich_text import has_content, plain_text_of
 from .textline_merge import dispatch as dispatch_textline_merge
 from .translators import (
@@ -823,12 +823,18 @@ class MangaTranslator:
         elif preserved_skip_font_scaling is not None:
             data_to_save['skip_font_scaling'] = bool(preserved_skip_font_scaling)
 
-        # 渲染过的 ctx，region.translation 已被 prepare_text_replacements_for_layout
-        # 就地替换为终稿（translation_raw 保留替换前文本）；标记后 load_text 重渲染
-        # 不再二次替换。未渲染的导出（translate_json_only / 导出原文）译文仍是原始的，
-        # 保持缺省 False，导入渲染时才应用替换规则。
+        # Only the new guarded renderer guarantees that replacements and
+        # automatic [BR] were NOT committed to region.translation. Older
+        # pre-rendered payloads and direct callers still carry committed text,
+        # and must keep their previous skip_text_replacements=True behavior.
         if getattr(ctx, 'img_rendered', None) is not None:
-            data_to_save['skip_text_replacements'] = True
+            if getattr(ctx, 'render_semantic_source_preserved', False):
+                data_to_save['render_text_source_version'] = 2
+                data_to_save['skip_text_replacements'] = bool(
+                    getattr(ctx, 'skip_text_replacements', False)
+                )
+            else:
+                data_to_save['skip_text_replacements'] = True
         
         # 添加超分和上色配置信息
         if config:
@@ -858,7 +864,7 @@ class MangaTranslator:
 
         if skip_mask_export:
             logger.info("Import YOLO labels enabled in export mode: skipping mask save in JSON")
-        elif self.save_mask and mask_to_save is not None:
+        elif (self.save_mask or (self.ocr_workspace_render and getattr(ctx, 'mask_repaired_from_regions', False))) and mask_to_save is not None:
             try:
                 import base64
 
@@ -1582,6 +1588,19 @@ class MangaTranslator:
         if preloaded is not None:
             # 编辑器导出：文本替换在编辑阶段已生效，恒跳过
             skip_text_replacements = True
+
+        # Legacy rendered JSON used to serialize automatic line breaks.
+        # Repair only clear Vietnamese syllable splits/trailing markers;
+        # preserve every deliberate paragraph break and styled document.
+        if preloaded is None and isinstance(image_data, dict):
+            from .rendering.legacy_break_repair import repair_legacy_image_regions
+
+            for entry in regions_data:
+                if isinstance(entry, dict) and not entry.get("target_lang"):
+                    entry["target_lang"] = getattr(getattr(config, "translator", None), "target_lang", "")
+            repaired_count = repair_legacy_image_regions(image_data)
+            if repaired_count:
+                logger.info("Repaired legacy automatic BR errors in %d regions of %s", repaired_count, text_file_path)
 
         regions = []
         parse_failure_count = 0
@@ -3373,6 +3392,8 @@ class MangaTranslator:
                 render_alpha=render_alpha,
                 bubble_mask=ctx.bubble_mask,
             )
+            # Only record source preservation after a successful render.
+            ctx.render_semantic_source_preserved = True
             
             # Handle debug image if returned
             if need_debug_img and isinstance(result, tuple):
@@ -3993,6 +4014,28 @@ class MangaTranslator:
 
                                 setattr(ctx, mask_attr, mask_arr)
 
+                            # OCR-only projects can miss complete text polygons.
+                            # A repaired mask must not reuse an outdated inpaint.
+                            if self.ocr_workspace_render and ctx.text_regions and not ctx.editor_export:
+                                from .mask_refinement.region_polygon_mask import (
+                                    repair_missing_translation_masks,
+                                )
+                                old_mask = ctx.mask if ctx.mask is not None else ctx.mask_raw
+                                repaired_mask, repaired = repair_missing_translation_masks(
+                                    ctx.text_regions, (target_h, target_w), old_mask
+                                )
+                                if repaired:
+                                    if ctx.mask is not None:
+                                        ctx.mask = repaired_mask
+                                    else:
+                                        ctx.mask_raw = repaired_mask
+                                    ctx.mask_repaired_from_regions = True
+                                    existing_inpainted_path = None
+                                    logger.info(
+                                        "OCR Workspace: repaired missing erase masks; "
+                                        "regenerating inpainted image instead of reusing sidecar"
+                                    )
+
                             # 编辑器修复图对齐到工作图尺寸，供后续分支直接复用
                             preloaded_inpainted = self._align_preloaded_inpainted(preloaded_inpainted_raw, ctx.img_rgb)
 
@@ -4056,7 +4099,7 @@ class MangaTranslator:
                                         generated_inpainted_in_load_text
                                         and image_name
                                         and ctx.img_inpainted is not None
-                                        and self.save_text
+                                        and (self.save_text or self.ocr_workspace_render)
                                     ):
                                         self._save_inpainted_image(
                                             image_name,
@@ -4135,7 +4178,7 @@ class MangaTranslator:
                                     generated_inpainted_in_load_text
                                     and image_name
                                     and ctx.img_inpainted is not None
-                                    and self.save_text
+                                    and (self.save_text or self.ocr_workspace_render)
                                 ):
                                     self._save_inpainted_image(
                                         image_name,

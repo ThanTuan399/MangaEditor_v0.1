@@ -22,6 +22,11 @@ class TranslatorSettings(BaseModel):
     google_web_delay_ms: int = 900
     google_web_timeout_ms: int = 20000
     google_web_retries: int = 2
+    ollama_model: str = "qwen3:4b"
+    ollama_batch_size: int = 3
+    ollama_base_url: str = "http://127.0.0.1:11434/v1"
+    ollama_disable_thinking: bool = True
+    ollama_streaming: bool = False
     local_model_name: str = "facebook/nllb-200-distilled-600M"
     local_model_path: Optional[str] = None
     local_source_lang: str = "auto"

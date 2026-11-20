@@ -556,6 +556,17 @@ class EditorView(QWidget):
             self.rich_text_editor.flush_pending_changes()
         return self.controller.export_image()
 
+    def _on_floating_editor_style_changed(
+        self, region_index: int, patch: dict
+    ) -> None:
+        """Apply the floating editor's font/size to the selected bubble."""
+        if (
+            tuple(self.model.get_selection() or ()) != (region_index,)
+            or not isinstance(patch, dict)
+        ):
+            return
+        self.controller.update_region_style_patch([region_index], patch)
+
     def _on_replace_all_clicked(self):
         """在所有译文中执行查找和替换"""
         find_text = self.find_input.text()
@@ -1081,6 +1092,9 @@ class EditorView(QWidget):
         if self.rich_text_editor is not None:
             self.rich_text_editor.rich_text_changed.connect(
                 self.controller.update_translation_rich
+            )
+            self.rich_text_editor.region_style_changed.connect(
+                self._on_floating_editor_style_changed
             )
             self.rich_text_editor.layout_size_changed.connect(
                 self._position_rich_text_editor_for_selection

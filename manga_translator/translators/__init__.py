@@ -11,6 +11,7 @@ from .google_image_web import GoogleImageWebTranslator
 from .google_web import GoogleWebTranslator
 from .local_nllb import LocalNLLBTranslator
 from .none import NoneTranslator
+from .ollama import OllamaTranslator
 from .openai import OpenAITranslator
 from .openai_hq import OpenAIHighQualityTranslator
 from .original import OriginalTranslator
@@ -27,6 +28,7 @@ TRANSLATORS = {
     Translator.google_image_web: GoogleImageWebTranslator,
     Translator.google_web: GoogleWebTranslator,
     Translator.local_nllb: LocalNLLBTranslator,
+    Translator.ollama: OllamaTranslator,
     Translator.none: NoneTranslator,
     Translator.original: OriginalTranslator,
     Translator.sakura: SakuraTranslator,

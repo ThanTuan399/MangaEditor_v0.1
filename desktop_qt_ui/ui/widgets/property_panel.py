@@ -246,8 +246,11 @@ class PropertyPanel(QWidget):
         content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self._create_mask_edit_section(content_layout)
-        self._create_text_section(content_layout)
+        # Expose font, font size, spacing and direction before the tall OCR/
+        # translation text section: previously these controls were buried
+        # below multiple textboxes and looked absent to typesetting users.
         self._create_style_section(content_layout)
+        self._create_text_section(content_layout)
         self._create_action_section(content_layout)
 
         # 添加一个弹性空间，将所有内容向上推，使布局更紧凑

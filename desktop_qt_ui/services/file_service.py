@@ -91,6 +91,30 @@ class FileService:
                     if not region.get('target_lang'):
                         region['target_lang'] = default_target_lang
 
+            from manga_translator.rendering.legacy_break_repair import (
+                repair_legacy_image_regions,
+            )
+
+            repaired_count = repair_legacy_image_regions(image_data)
+            if repaired_count:
+                self.logger.info(
+                    "Repaired %d legacy automatic [BR] breaks in %s (in memory)",
+                    repaired_count, os.path.basename(json_path),
+                )
+
+            # Old manga OCR projects may store the Japanese vertical source
+            # direction on Vietnamese text. Correct it in memory so both the
+            # Editor orientation controls and canvas agree on horizontal text.
+            for region in regions:
+                if (
+                    isinstance(region, dict)
+                    and str(region.get('target_lang') or '').strip().upper() == 'VIN'
+                    and str(region.get('direction') or '').strip().lower() in {'v', 'vertical', 'vr'}
+                    and bool(region.get('translation'))
+                    and not region.get('direction_user_override')
+                ):
+                    region['direction'] = 'h'
+
             # 旧 JSON 兼容:缺 translation_raw 时用 translation 回填,
             # 保证编辑器"替换前译文"框始终有值显示
             for region in regions:

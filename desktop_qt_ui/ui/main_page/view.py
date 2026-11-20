@@ -139,6 +139,7 @@ class MainView(QObject):
         self.app_version = get_app_version()
         self.env_widgets = {}
         self._active_api_tasks = {}
+        self._ollama_probe_worker = None
         self._update_check_in_progress = False
         self._latest_update_info: UpdateInfo | None = None
         self._update_branch = "main"
@@ -178,6 +179,37 @@ class MainView(QObject):
         QTimer.singleShot(100, self.update_start_button_text) # Set initial text
         QTimer.singleShot(100, self._sync_workflow_mode_from_config) # Sync workflow mode dropdown
         QTimer.singleShot(5000, self._maybe_auto_check_updates)
+
+    def _on_ollama_test_clicked(self):
+        """Check the selected Ollama model without blocking the UI thread."""
+        worker = self._ollama_probe_worker
+        if worker is not None and worker.isRunning():
+            return
+        from ui.main_page.ollama_probe import OllamaProbeThread
+
+        cfg = self.config_service.get_config().translator
+        self.ollama_test_button.setEnabled(False)
+        self.ollama_status_label.setText("Đang kiểm tra Ollama cục bộ...")
+        worker = OllamaProbeThread(cfg.ollama_base_url, cfg.ollama_model, self)
+        self._ollama_probe_worker = worker
+        worker.result.connect(self._on_ollama_test_result)
+        worker.finished.connect(self._on_ollama_probe_finished)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_ollama_test_result(self, ok: bool, message: str):
+        self.ollama_status_label.setText(message)
+        self.ollama_status_label.setToolTip(message)
+
+    def _on_ollama_probe_finished(self):
+        self.ollama_test_button.setEnabled(True)
+        self._ollama_probe_worker = None
+
+    def shutdown_background_threads(self, timeout_ms: int = 3000) -> None:
+        main_view_env.shutdown_background_threads(self, timeout_ms)
+        worker = getattr(self, "_ollama_probe_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.wait(max(timeout_ms, 5000))
 
     def _create_translation_interface(self, translation_page: QWidget) -> QWidget:
         interface = QWidget()

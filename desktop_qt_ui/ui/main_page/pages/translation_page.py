@@ -105,6 +105,13 @@ def create_translation_page(self) -> QWidget:
     self.start_button = PrimaryPushButton(self._t("Start Translation"))
     self.start_button.setFixedHeight(36)
     task_layout.addWidget(self.start_button, 2, 5)
+    # Ollama is a standalone backend: this check does not touch OpenAI keys.
+    self.ollama_status_label = CaptionLabel("Ollama: chưa kiểm tra kết nối")
+    self.ollama_status_label.setWordWrap(True)
+    self.ollama_test_button = PushButton("Kiểm tra Ollama")
+    self.ollama_test_button.setIcon(FIF.SYNC)
+    task_layout.addWidget(self.ollama_status_label, 3, 0, 1, 4)
+    task_layout.addWidget(self.ollama_test_button, 3, 4, 1, 2)
     page_layout.addWidget(task_card, 0)
     self.translation_task_card = task_card
 
@@ -123,6 +130,7 @@ def create_translation_page(self) -> QWidget:
     self.browse_button.clicked.connect(self.controller.select_output_folder)
     self.open_button.clicked.connect(self.controller.open_output_folder)
     self.start_button.clicked.connect(self.controller.start_backend_task)
+    self.ollama_test_button.clicked.connect(self._on_ollama_test_clicked)
     self.workflow_mode_combo.currentIndexChanged.connect(self._on_workflow_mode_changed)
 
     return page
