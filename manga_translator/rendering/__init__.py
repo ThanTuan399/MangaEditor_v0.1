@@ -855,12 +855,9 @@ def optimize_line_breaks_for_region(region: TextBlock, config: Config, target_fo
         return best_text, best_font_size
 
 def _resolve_region_render_horizontal(region: TextBlock) -> bool:
-    forced_direction = region._direction if hasattr(region, '_direction') else region.direction
-    if forced_direction != 'auto':
-        if forced_direction in ['horizontal', 'h']:
-            return True
-        if forced_direction in ['vertical', 'v']:
-            return False
+    # Keep backend layout, Editor layout and TextBlock.to_dict direction in sync.
+    # The TextBlock property also repairs inherited OCR vertical direction for
+    # Vietnamese translations, while respecting explicit user overrides.
     return region.horizontal
 
 
