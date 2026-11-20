@@ -42,3 +42,12 @@ def preserve_semantic_translations(regions: Iterable):
             # record that contaminates the next render of the same page.
             if hasattr(region, "_replacement_layout_record"):
                 delattr(region, "_replacement_layout_record")
+
+
+
+async def dispatch_preserving_source(img, text_regions, *args, **kwargs):
+    """Render text without persisting algorithmic [BR] or auto-rich paragraphs."""
+    from . import dispatch
+
+    with preserve_semantic_translations(text_regions):
+        return await dispatch(img, text_regions, *args, **kwargs)
