@@ -6,7 +6,7 @@ import re
 import shutil
 from typing import Any
 
-from PyQt6.QtCore import Qt, QRectF, QUrl, pyqtSignal, QSignalBlocker
+from PyQt6.QtCore import Qt, QRectF, QUrl, pyqtSignal, QSignalBlocker, QTimer
 from PyQt6.QtGui import QBrush, QPainter, QPen, QPixmap, QDesktopServices, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
@@ -179,6 +179,10 @@ class OCRWorkspacePanel(QWidget):
                         pass
         self._pending_render_signatures: dict[str, str] = {}
         self._pending_render_project: str | None = None
+        self._manual_autosave_timer = QTimer(self)
+        self._manual_autosave_timer.setSingleShot(True)
+        self._manual_autosave_timer.setInterval(1500)
+        self._manual_autosave_timer.timeout.connect(self._autosave_manual_translation)
 
         self._build_ui()
         self._connect_signals()
@@ -259,8 +263,13 @@ class OCRWorkspacePanel(QWidget):
             "Inpainting nhanh (LaMa ≤1024px, có thể giảm chi tiết nền)"
         )
         self.fast_inpaint_checkbox.setChecked(True)
+        self.manual_autosave_checkbox = CheckBox(
+            "Tự lưu bản dịch sau khi ngừng gõ (1,5 giây)"
+        )
+        self.manual_autosave_checkbox.setChecked(True)
         performance_row.addWidget(self.fast_inpaint_checkbox)
         performance_row.addStretch(1)
+        performance_row.addWidget(self.manual_autosave_checkbox)
         toolbar_layout.addLayout(performance_row)
         root.addWidget(toolbar)
 
@@ -416,6 +425,7 @@ class OCRWorkspacePanel(QWidget):
             self.manual_translation_edit, self.insert_break_button,
             self.next_region_button, self.next_untranslated_button,
             self.save_button, self.fast_inpaint_checkbox,
+            self.manual_autosave_checkbox,
         ):
             widget.setEnabled(not busy)
         self.scan_button.setText(
@@ -655,6 +665,7 @@ class OCRWorkspacePanel(QWidget):
         finally:
             self._loading_table = False
         self.preview.set_image(None)
+        self._manual_autosave_timer.stop()
         self.image_path_label.setText("")
         self.region_count_label.setText("0 regions")
         self._loading_manual_text = True
@@ -830,6 +841,7 @@ class OCRWorkspacePanel(QWidget):
                 region.pop("translation_rich", None)
         self._dirty = True
         self.save_button.setText(self._t("Save JSON") + " *")
+        self._schedule_manual_autosave()
         self._update_manual_progress()
         if (
             item.column() == 2
@@ -848,6 +860,21 @@ class OCRWorkspacePanel(QWidget):
         with QSignalBlocker(self.manual_translation_edit):
             self.manual_translation_edit.setPlainText(manual_text_to_editor(text))
         self.manual_translation_edit.setEnabled(bool(self.current_regions))
+
+    def _schedule_manual_autosave(self):
+        if self.manual_autosave_checkbox.isChecked() and self.current_json_path:
+            self._manual_autosave_timer.start()
+
+    def _autosave_manual_translation(self):
+        if (
+            self._dirty and self.current_json_path
+            and self.manual_autosave_checkbox.isChecked()
+            and not self.controller.state_manager.is_translating()
+        ):
+            if not self.save_current(silent=True):
+                self.status_label.setText(
+                    "Không tự lưu được JSON; hãy dùng Save JSON để xem lỗi."
+                )
 
     def _on_selection_changed(self):
         rows = self.table.selectionModel().selectedRows()
@@ -980,6 +1007,7 @@ class OCRWorkspacePanel(QWidget):
         if applied:
             self._dirty = True
             self.save_button.setText(self._t("Save JSON") + " *")
+            self._schedule_manual_autosave()
             self._update_manual_progress()
             self._sync_selected_translation()
         self.status_label.setText(
@@ -1017,6 +1045,7 @@ class OCRWorkspacePanel(QWidget):
                 json.dump(self.current_data, handle, ensure_ascii=False, indent=4)
             os.replace(tmp_path, self.current_json_path)
             self._dirty = False
+            self._manual_autosave_timer.stop()
             self.save_button.setText(self._t("Save JSON"))
             self.status_label.setText(self._t("Project JSON saved."))
             return True
