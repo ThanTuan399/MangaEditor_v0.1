@@ -1586,6 +1586,19 @@ class MangaTranslator:
             # 编辑器导出：文本替换在编辑阶段已生效，恒跳过
             skip_text_replacements = True
 
+        # Legacy rendered JSON used to serialize automatic line breaks.
+        # Repair only clear Vietnamese syllable splits/trailing markers;
+        # preserve every deliberate paragraph break and styled document.
+        if preloaded is None and isinstance(image_data, dict):
+            from .rendering.legacy_break_repair import repair_legacy_image_regions
+
+            for entry in regions_data:
+                if isinstance(entry, dict) and not entry.get("target_lang"):
+                    entry["target_lang"] = getattr(getattr(config, "translator", None), "target_lang", "")
+            repaired_count = repair_legacy_image_regions(image_data)
+            if repaired_count:
+                logger.info("Repaired legacy automatic BR errors in %d regions of %s", repaired_count, text_file_path)
+
         regions = []
         parse_failure_count = 0
         for region_data in regions_data:
