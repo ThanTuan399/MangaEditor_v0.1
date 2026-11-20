@@ -6,8 +6,8 @@ import re
 import shutil
 from typing import Any
 
-from PyQt6.QtCore import Qt, QRectF, QUrl, pyqtSignal
-from PyQt6.QtGui import QBrush, QPainter, QPen, QPixmap, QDesktopServices
+from PyQt6.QtCore import Qt, QRectF, QUrl, pyqtSignal, QSignalBlocker
+from PyQt6.QtGui import QBrush, QPainter, QPen, QPixmap, QDesktopServices, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QPlainTextEdit,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -40,6 +41,7 @@ from qfluentwidgets import (
 from manga_translator.image_formats import SUPPORTED_IMAGE_EXTENSIONS
 from manga_translator.utils.path_manager import find_json_path
 from .ocr_project_registry import OCRProjectRegistry, norm_path, within, render_signature, render_config_digest
+from .manual_text import manual_text_to_editor, manual_editor_to_text, next_untranslated_region, translated_region_counts
 
 
 def _allowed_image_extensions() -> set[str]:
@@ -160,6 +162,7 @@ class OCRWorkspacePanel(QWidget):
         self.current_regions: list[dict[str, Any]] = []
         self._dirty = False
         self._loading_table = False
+        self._loading_manual_text = False
         app_root = getattr(getattr(controller, "config_service", None), "root_dir", None) or os.getcwd()
         self.projects = OCRProjectRegistry(app_root)
         # Preserve existing folders from the old global list on first launch,
@@ -280,6 +283,34 @@ class OCRWorkspacePanel(QWidget):
         self.table.setColumnWidth(0, 46)
         text_layout.addWidget(self.table, 1)
 
+        # The table is kept for bulk editing, but its cells are unsuitable for
+        # intentionally breaking dialogue across multiple lines. The selected
+        # region editor is a real multi-line control: soft visual wrapping never
+        # becomes a hard [BR] marker in JSON.
+        quick_row = QHBoxLayout()
+        self.manual_translation_title = BodyLabel("Bản dịch vùng đang chọn")
+        self.manual_translation_progress = CaptionLabel("0/0 đã dịch")
+        quick_row.addWidget(self.manual_translation_title)
+        quick_row.addStretch(1)
+        quick_row.addWidget(self.manual_translation_progress)
+        text_layout.addLayout(quick_row)
+        self.manual_translation_edit = QPlainTextEdit()
+        self.manual_translation_edit.setPlaceholderText(
+            "Nhập bản dịch. Nhấn Enter để xuống dòng thực sự. "
+            "Việc tự xuống dòng khi ô hẹp không tạo [BR]."
+        )
+        self.manual_translation_edit.setFixedHeight(100)
+        text_layout.addWidget(self.manual_translation_edit)
+
+        manual_actions = QHBoxLayout()
+        self.insert_break_button = PushButton("↵ Xuống dòng")
+        self.next_untranslated_button = PushButton("Vùng chưa dịch tiếp theo")
+        self.next_region_button = PushButton("Vùng tiếp →")
+        manual_actions.addWidget(self.insert_break_button)
+        manual_actions.addWidget(self.next_untranslated_button)
+        manual_actions.addWidget(self.next_region_button)
+        text_layout.addLayout(manual_actions)
+
         self.copy_hint = CaptionLabel(
             self._t(
                 "Copy All uses [001] markers. Translate outside the app, keep the markers, "
@@ -332,6 +363,27 @@ class OCRWorkspacePanel(QWidget):
         self.page_combo.currentIndexChanged.connect(self._on_page_changed)
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.manual_translation_edit.textChanged.connect(
+            self._on_manual_translation_changed
+        )
+        self.insert_break_button.clicked.connect(
+            self._insert_manual_translation_break
+        )
+        self.next_region_button.clicked.connect(
+            self._select_next_translation_region
+        )
+        self.next_untranslated_button.clicked.connect(
+            self._select_next_untranslated_region
+        )
+        self._save_manual_shortcut = QShortcut(
+            QKeySequence.StandardKey.Save, self
+        )
+        self._save_manual_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        self._save_manual_shortcut.activated.connect(
+            lambda: self.save_current()
+        )
         self.copy_all_button.clicked.connect(self.copy_all_ocr)
         self.copy_selected_button.clicked.connect(self.copy_selected)
         self.paste_batch_button.clicked.connect(self.paste_batch_from_clipboard)
@@ -350,7 +402,10 @@ class OCRWorkspacePanel(QWidget):
             self.scan_button, self.render_batch_button, self.render_current_button,
             self.render_all_button, self.open_editor_button,
             self.project_combo, self.add_folder_button, self.import_subfolders_button,
-            self.remove_project_button, self.add_files_button, self.table, self.save_button,
+            self.remove_project_button, self.add_files_button, self.table,
+            self.manual_translation_edit, self.insert_break_button,
+            self.next_region_button, self.next_untranslated_button,
+            self.save_button,
         ):
             widget.setEnabled(not busy)
         self.scan_button.setText(
@@ -592,6 +647,10 @@ class OCRWorkspacePanel(QWidget):
         self.preview.set_image(None)
         self.image_path_label.setText("")
         self.region_count_label.setText("0 regions")
+        self._loading_manual_text = True
+        self.manual_translation_edit.clear()
+        self._loading_manual_text = False
+        self.manual_translation_progress.setText("0/0 đã dịch")
         self._dirty = False
 
     def load_page(self, image_path: str, force: bool = False):
@@ -678,11 +737,56 @@ class OCRWorkspacePanel(QWidget):
         finally:
             self._loading_table = False
         self.region_count_label.setText(f"{len(self.current_regions)} regions")
+        self._update_manual_progress()
         if self.current_regions:
             self.table.selectRow(0)
             self.preview.highlight_region(self.current_regions[0])
         else:
             self.preview.highlight_region(None)
+        self._on_selection_changed()
+
+    def _update_manual_progress(self):
+        filled, total = translated_region_counts(self.current_regions)
+        self.manual_translation_progress.setText(
+            f"{filled}/{total} đã dịch"
+        )
+
+    def _insert_manual_translation_break(self):
+        if self.table.currentRow() < 0:
+            return
+        self.manual_translation_edit.insertPlainText("\n")
+        self.manual_translation_edit.setFocus()
+
+    def _on_manual_translation_changed(self):
+        if self._loading_manual_text or self._loading_table:
+            return
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self.current_regions):
+            return
+        new = manual_editor_to_text(
+            self.manual_translation_edit.toPlainText()
+        )
+        item = self.table.item(row, 2)
+        if item is not None and item.text() != new:
+            # ItemChanged applies the same data/translation_rich invalidation
+            # path as direct table edits; no duplicate writeback.
+            item.setText(new)
+
+    def _select_next_translation_region(self):
+        if not self.current_regions:
+            return
+        self.table.selectRow((self.table.currentRow() + 1) % len(self.current_regions))
+        self.manual_translation_edit.setFocus()
+
+    def _select_next_untranslated_region(self):
+        row = next_untranslated_region(
+            self.current_regions, self.table.currentRow()
+        )
+        if row is not None:
+            self.table.selectRow(row)
+            self.manual_translation_edit.setFocus()
+        else:
+            self.status_label.setText("Đã có bản dịch cho tất cả vùng OCR.")
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._loading_table or item.column() == 0:
@@ -710,15 +814,31 @@ class OCRWorkspacePanel(QWidget):
                 region.pop("translation_rich", None)
         self._dirty = True
         self.save_button.setText(self._t("Save JSON") + " *")
+        self._update_manual_progress()
+        if item.column() == 2 and item.row() == self.table.currentRow():
+            self._sync_selected_translation()
+
+    def _sync_selected_translation(self):
+        row = self.table.currentRow()
+        text = (
+            str(self.current_regions[row].get("translation") or "")
+            if 0 <= row < len(self.current_regions)
+            else ""
+        )
+        with QSignalBlocker(self.manual_translation_edit):
+            self.manual_translation_edit.setPlainText(manual_text_to_editor(text))
+        self.manual_translation_edit.setEnabled(bool(self.current_regions))
 
     def _on_selection_changed(self):
         rows = self.table.selectionModel().selectedRows()
         if not rows:
             self.preview.highlight_region(None)
+            self._sync_selected_translation()
             return
         row = rows[0].row()
         region = self.current_regions[row] if 0 <= row < len(self.current_regions) else None
         self.preview.highlight_region(region)
+        self._sync_selected_translation()
 
     def copy_all_ocr(self):
         if not self.current_regions:
@@ -840,6 +960,8 @@ class OCRWorkspacePanel(QWidget):
         if applied:
             self._dirty = True
             self.save_button.setText(self._t("Save JSON") + " *")
+            self._update_manual_progress()
+            self._sync_selected_translation()
         self.status_label.setText(
             self._t("Pasted {count} translations from clipboard.", count=applied)
         )
