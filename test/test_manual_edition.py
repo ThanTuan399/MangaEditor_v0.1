@@ -183,3 +183,32 @@ def test_manual_editor_keeps_cursor_and_persists_only_hard_breaks():
     finally:
         panel.close()
         app.processEvents()
+
+
+
+def test_manual_autosave_is_debounced_and_never_saves_while_busy():
+    from ui.main_page.pages.ocr_workspace_page import OCRWorkspacePanel
+
+    starts = []
+    saves = []
+    checkbox = SimpleNamespace(isChecked=lambda: True)
+    view = SimpleNamespace(
+        manual_autosave_checkbox=checkbox,
+        current_json_path="existing.json",
+        _manual_autosave_timer=SimpleNamespace(start=lambda: starts.append(True)),
+        _dirty=True,
+        controller=SimpleNamespace(
+            state_manager=SimpleNamespace(is_translating=lambda: False)
+        ),
+        save_current=lambda silent=False: saves.append(silent) or True,
+    )
+    OCRWorkspacePanel._schedule_manual_autosave(view)
+    assert starts == [True]
+    OCRWorkspacePanel._autosave_manual_translation(view)
+    assert saves == [True]
+    view.controller.state_manager.is_translating = lambda: True
+    OCRWorkspacePanel._autosave_manual_translation(view)
+    assert saves == [True]
+    view.manual_autosave_checkbox = SimpleNamespace(isChecked=lambda: False)
+    OCRWorkspacePanel._schedule_manual_autosave(view)
+    assert starts == [True]
