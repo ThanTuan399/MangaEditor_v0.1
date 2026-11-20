@@ -65,7 +65,7 @@ from .mask_refinement import dispatch as dispatch_mask_refinement
 from .ocr import dispatch as dispatch_ocr
 from .ocr import prepare as prepare_ocr
 from .ocr import unload as unload_ocr
-from .rendering import dispatch as dispatch_rendering
+from .rendering.text_source_preservation import dispatch_preserving_source as dispatch_rendering
 from .rendering.rich_text import has_content, plain_text_of
 from .textline_merge import dispatch as dispatch_textline_merge
 from .translators import (
@@ -823,12 +823,15 @@ class MangaTranslator:
         elif preserved_skip_font_scaling is not None:
             data_to_save['skip_font_scaling'] = bool(preserved_skip_font_scaling)
 
-        # 渲染过的 ctx，region.translation 已被 prepare_text_replacements_for_layout
-        # 就地替换为终稿（translation_raw 保留替换前文本）；标记后 load_text 重渲染
-        # 不再二次替换。未渲染的导出（translate_json_only / 导出原文）译文仍是原始的，
-        # 保持缺省 False，导入渲染时才应用替换规则。
+        # The renderer may temporarily wrap text and insert [BR] for layout,
+        # but dispatch_preserving_source restores the user's semantic text
+        # before JSON serialization. Re-apply replacements on each render
+        # rather than treating the ephemeral layout as already committed.
         if getattr(ctx, 'img_rendered', None) is not None:
-            data_to_save['skip_text_replacements'] = True
+            data_to_save['render_text_source_version'] = 2
+            data_to_save['skip_text_replacements'] = bool(
+                getattr(ctx, 'skip_text_replacements', False)
+            )
         
         # 添加超分和上色配置信息
         if config:
