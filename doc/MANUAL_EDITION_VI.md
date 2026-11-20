@@ -19,7 +19,7 @@ Các dịch vụ dịch AI, Prompt Manager và màn hình API được **ẩn kh
 - Chọn một hàng trong bảng OCR; nội dung gốc được tô sáng trên preview.
 - Gõ bản dịch vào ô **Bản dịch vùng đang chọn**. **Enter** tạo ngắt dòng cứng; wrap tự động do ô hẹp không tạo \`[BR]\`.
 - Dùng nút **↵ Xuống dòng**, **Vùng tiếp →**, **Vùng chưa dịch tiếp theo**; tiến độ **đã dịch/tổng vùng** hiển thị bên cạnh.
-- **Ctrl+S** hoặc **Save JSON** để lưu. Dùng Copy All OCR/Paste Batch nếu muốn dịch hàng loạt theo ID.
+- **Tự lưu (mặc định bật):** sau 1,5 giây không gõ, ứng dụng tự lưu JSON và giữ bản sao `.ocr_workspace.bak`. Có thể tắt bằng ô **Tự lưu bản dịch**. **Ctrl+S** hoặc **Save JSON** vẫn lưu tức thì. Dùng Copy All OCR/Paste Batch nếu muốn dịch hàng loạt theo ID.
 - **Render trang đang chọn** để xem kết quả; **Render trang đã đổi** cho chương; mở **Editor** để điều chỉnh font, lớp mask, Paint, Clone và xuất ảnh.
 
 Ví dụ ô biên tập:
