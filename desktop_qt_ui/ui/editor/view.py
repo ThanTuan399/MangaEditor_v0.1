@@ -561,7 +561,7 @@ class EditorView(QWidget):
     ) -> None:
         """Apply the floating editor's font/size to the selected bubble."""
         if (
-            self.model.get_selection() != [region_index]
+            tuple(self.model.get_selection() or ()) != (region_index,)
             or not isinstance(patch, dict)
         ):
             return
