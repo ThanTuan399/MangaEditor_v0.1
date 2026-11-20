@@ -131,6 +131,8 @@ class TextBlock(object):
         self.font_size = round(font_size)
         self.angle = angle
         self._direction = direction
+        # Explicit user direction survives OCR-derived vertical-layout migration.
+        self.direction_user_override = bool(kwargs.get('direction_user_override', False))
 
         self.texts = texts if texts is not None else []
         self.text = texts[0]
@@ -446,6 +448,7 @@ class TextBlock(object):
             'fg_colors': fg_out,
             'bg_colors': bg_out,
             'direction': self.direction,
+            'direction_user_override': self.direction_user_override,
             'alignment': self.alignment,
             'target_lang': self.target_lang,
             'source_lang': self.source_lang,
@@ -592,6 +595,16 @@ class TextBlock(object):
         """Resolve auto or a legacy input alias to horizontal (h) or vertical (v)."""
         normalized_direction = _normalize_direction_token(self._direction)
         if normalized_direction in ('h', 'v'):
+            # OCR for Japanese manga often records a vertical source orientation.
+            # It must not survive as a vertical Vietnamese translation unless
+            # a user explicitly selected vertical layout in the Editor.
+            if (
+                normalized_direction == 'v'
+                and str(self.target_lang or '').strip().upper() == 'VIN'
+                and self.translation
+                and not self.direction_user_override
+            ):
+                return 'h'
             return normalized_direction
 
         preset = LANGUAGE_ORIENTATION_PRESETS.get(self.target_lang)
