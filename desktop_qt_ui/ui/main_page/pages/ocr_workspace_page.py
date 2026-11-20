@@ -31,6 +31,7 @@ from qfluentwidgets import (
     BodyLabel,
     CaptionLabel,
     CardWidget,
+    CheckBox,
     ComboBox,
     PrimaryPushButton,
     PushButton,
@@ -252,6 +253,14 @@ class OCRWorkspacePanel(QWidget):
         toolbar_layout.addLayout(project_row)
         toolbar_layout.addLayout(source_row)
         toolbar_layout.addLayout(edit_row)
+        performance_row = QHBoxLayout()
+        self.fast_inpaint_checkbox = CheckBox(
+            "Inpainting nhanh (LaMa ≤1024px, có thể giảm chi tiết nền)"
+        )
+        self.fast_inpaint_checkbox.setChecked(True)
+        performance_row.addWidget(self.fast_inpaint_checkbox)
+        performance_row.addStretch(1)
+        toolbar_layout.addLayout(performance_row)
         root.addWidget(toolbar)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -405,7 +414,7 @@ class OCRWorkspacePanel(QWidget):
             self.remove_project_button, self.add_files_button, self.table,
             self.manual_translation_edit, self.insert_break_button,
             self.next_region_button, self.next_untranslated_button,
-            self.save_button,
+            self.save_button, self.fast_inpaint_checkbox,
         ):
             widget.setEnabled(not busy)
         self.scan_button.setText(
@@ -1037,6 +1046,11 @@ class OCRWorkspacePanel(QWidget):
             QMessageBox.information(self, "OCR Workspace", "Hãy chọn dự án trước.")
             return
         settings = self.controller.config_service.get_config().model_dump()
+        if self.fast_inpaint_checkbox.isChecked():
+            inpainter_settings = settings.setdefault("inpainter", {})
+            inpainter_settings["inpainting_size"] = min(
+                int(inpainter_settings.get("inpainting_size") or 2048), 1024
+            )
         config_digest = render_config_digest(settings)
         cache = self.projects.read_cache(folder)
         images = [self.current_image_path] if only_current else self.image_paths
@@ -1079,7 +1093,8 @@ class OCRWorkspacePanel(QWidget):
             f"bỏ qua {skipped} trang không đổi."
         )
         self.controller.start_ocr_workspace_render(
-            project_images=candidates, project_root=folder
+            project_images=candidates, project_root=folder,
+            fast_inpaint=self.fast_inpaint_checkbox.isChecked(),
         )
 
     def export_batch_txt(self):
