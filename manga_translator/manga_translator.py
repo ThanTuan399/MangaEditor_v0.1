@@ -858,7 +858,7 @@ class MangaTranslator:
 
         if skip_mask_export:
             logger.info("Import YOLO labels enabled in export mode: skipping mask save in JSON")
-        elif self.save_mask and mask_to_save is not None:
+        elif (self.save_mask or (self.ocr_workspace_render and getattr(ctx, 'mask_repaired_from_regions', False))) and mask_to_save is not None:
             try:
                 import base64
 
@@ -3993,6 +3993,28 @@ class MangaTranslator:
 
                                 setattr(ctx, mask_attr, mask_arr)
 
+                            # OCR-only projects can miss complete text polygons.
+                            # A repaired mask must not reuse an outdated inpaint.
+                            if self.ocr_workspace_render and ctx.text_regions and not ctx.editor_export:
+                                from .mask_refinement.region_polygon_mask import (
+                                    repair_missing_translation_masks,
+                                )
+                                old_mask = ctx.mask if ctx.mask is not None else ctx.mask_raw
+                                repaired_mask, repaired = repair_missing_translation_masks(
+                                    ctx.text_regions, (target_h, target_w), old_mask
+                                )
+                                if repaired:
+                                    if ctx.mask is not None:
+                                        ctx.mask = repaired_mask
+                                    else:
+                                        ctx.mask_raw = repaired_mask
+                                    ctx.mask_repaired_from_regions = True
+                                    existing_inpainted_path = None
+                                    logger.info(
+                                        "OCR Workspace: repaired missing erase masks; "
+                                        "regenerating inpainted image instead of reusing sidecar"
+                                    )
+
                             # 编辑器修复图对齐到工作图尺寸，供后续分支直接复用
                             preloaded_inpainted = self._align_preloaded_inpainted(preloaded_inpainted_raw, ctx.img_rgb)
 
@@ -4056,7 +4078,7 @@ class MangaTranslator:
                                         generated_inpainted_in_load_text
                                         and image_name
                                         and ctx.img_inpainted is not None
-                                        and self.save_text
+                                        and (self.save_text or self.ocr_workspace_render)
                                     ):
                                         self._save_inpainted_image(
                                             image_name,
@@ -4135,7 +4157,7 @@ class MangaTranslator:
                                     generated_inpainted_in_load_text
                                     and image_name
                                     and ctx.img_inpainted is not None
-                                    and self.save_text
+                                    and (self.save_text or self.ocr_workspace_render)
                                 ):
                                     self._save_inpainted_image(
                                         image_name,
