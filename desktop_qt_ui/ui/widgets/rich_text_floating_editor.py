@@ -13,7 +13,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import SimpleCardWidget, VerticalSeparator, isDarkTheme, themeColor
+from qfluentwidgets import (CaptionLabel, PushButton, SimpleCardWidget, SpinBox,
+                            VerticalSeparator, isDarkTheme, themeColor)
 
 from editor.rich_text_editing import (
     apply_ruby_to_range,
@@ -89,6 +90,8 @@ class RichTextFloatingEditor(SimpleCardWidget):
     """
 
     rich_text_changed = pyqtSignal(int, object, str)
+    # Whole-bubble font settings are undoable Editor region style commands.
+    region_style_changed = pyqtSignal(int, object)
     # ``True`` means the consumer should preserve the current top edge while
     # applying a size change to a side-docked editor.
     layout_size_changed = pyqtSignal(bool)
@@ -160,6 +163,38 @@ class RichTextFloatingEditor(SimpleCardWidget):
         self.text_box.setUndoRedoEnabled(True)
         layout.addWidget(self.text_box)
 
+        # Quick whole-bubble typography controls. The existing Property
+        # Editor "Style Settings" is far below Mask and OCR in its scroll area,
+        # making font family/size effectively undiscoverable while typesetting.
+        self.quick_format_bar = QWidget(self.main_panel)
+        quick_layout = QHBoxLayout(self.quick_format_bar)
+        quick_layout.setContentsMargins(0, 0, 0, 0)
+        quick_layout.setSpacing(5)
+        quick_layout.addWidget(CaptionLabel("Font:", self.quick_format_bar))
+        locale_getter = self.i18n.get_current_locale if self.i18n else None
+        self.quick_font_combo = FontComboBox(
+            self.quick_format_bar, locale_getter=locale_getter
+        )
+        self.quick_font_combo.setMinimumWidth(104)
+        self.quick_font_combo.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
+        )
+        quick_layout.addWidget(self.quick_font_combo, 1)
+        quick_layout.addWidget(CaptionLabel("Size:", self.quick_format_bar))
+        self.quick_font_size_input = SpinBox(self.quick_format_bar)
+        self.quick_font_size_input.setRange(8, 1000)
+        self.quick_font_size_input.setFixedWidth(69)
+        self.quick_font_size_input.setKeyboardTracking(False)
+        quick_layout.addWidget(self.quick_font_size_input)
+        self.insert_line_break_button = PushButton(
+            "↵ Xuống dòng", self.quick_format_bar
+        )
+        self.insert_line_break_button.setToolTip(
+            "Chèn ngắt dòng tại vị trí con trỏ (tương đương Enter)"
+        )
+        quick_layout.addWidget(self.insert_line_break_button)
+        layout.addWidget(self.quick_format_bar)
+
         self.toolbar = RichTextToolbar(self.main_panel)
         self.toolbar.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
@@ -204,6 +239,7 @@ class RichTextFloatingEditor(SimpleCardWidget):
             self.text_box.setUndoRedoEnabled(True)
             self._state.set_selection(0, 0)
             self.text_box.setExtraSelections([])
+            self._sync_quick_format_controls(region_data)
             self._refresh_inspector()
         finally:
             self._updating = False
@@ -235,6 +271,7 @@ class RichTextFloatingEditor(SimpleCardWidget):
     def refresh_region_if_changed(self, region_index: int, region_data: dict):
         if self._state.same_bound_content(region_index, region_data):
             self._state.refresh_cached_region_data(region_data)
+            self._sync_quick_format_controls(region_data)
             return
         self.set_region(region_index, region_data)
 
@@ -253,6 +290,7 @@ class RichTextFloatingEditor(SimpleCardWidget):
     def _set_editor_content_enabled(self, enabled: bool) -> None:
         for widget in (
             self.text_box,
+            self.quick_format_bar,
             self.toolbar,
             self.run_list,
             self.preset_sidebar,
@@ -293,6 +331,15 @@ class RichTextFloatingEditor(SimpleCardWidget):
         self.text_box.focus_lost.connect(self.flush_pending_changes)
         self.text_box.selection_drag_changed.connect(self._on_selection_drag_changed)
         self.toolbar.toggled.connect(self._on_toolbar_toggled)
+        self.quick_font_combo.currentIndexChanged.connect(
+            self._on_quick_font_changed
+        )
+        self.quick_font_size_input.valueChanged.connect(
+            self._on_quick_font_size_changed
+        )
+        self.insert_line_break_button.clicked.connect(
+            self._insert_manual_line_break
+        )
         self.run_list.range_selected.connect(self._select_python_range)
         self.run_list.patch_requested.connect(self._apply_style_to_explicit_range)
         self.run_list.remove_requested.connect(self._remove_style_from_explicit_range)
@@ -310,6 +357,48 @@ class RichTextFloatingEditor(SimpleCardWidget):
         self.preset_sidebar.rename_requested.connect(self._rename_rich_text_preset)
         self.preset_sidebar.delete_requested.connect(self._delete_rich_text_preset)
         self.preset_sidebar.collapsed_changed.connect(self._on_preset_sidebar_collapsed)
+
+    def _sync_quick_format_controls(self, region_data: dict) -> None:
+        """Refresh quick controls without emitting accidental edits."""
+        previous = self._updating
+        self._updating = True
+        try:
+            family = str(region_data.get("font_family") or "")
+            if family:
+                self.quick_font_combo.setCurrentFamily(family)
+            try:
+                size = int(region_data.get("font_size") or 24)
+            except (ValueError, TypeError):
+                size = 24
+            self.quick_font_size_input.setValue(max(8, min(1000, size)))
+        finally:
+            self._updating = previous
+
+    def _on_quick_font_changed(self, _index: int) -> None:
+        if self._updating or not self._state.has_region:
+            return
+        family = self.quick_font_combo.currentFamily()
+        if family:
+            self.region_style_changed.emit(
+                self._state.region_index, {"font_family": str(family)}
+            )
+
+    def _on_quick_font_size_changed(self, size: int) -> None:
+        if self._updating or not self._state.has_region:
+            return
+        self.region_style_changed.emit(
+            self._state.region_index, {"font_size": int(size)}
+        )
+
+    def _insert_manual_line_break(self) -> None:
+        """Insert a deliberate line break instead of resizing OCR geometry."""
+        if not self._state.has_region:
+            return
+        cursor = self.text_box.textCursor()
+        cursor.insertBlock()
+        self.text_box.setTextCursor(cursor)
+        self.flush_pending_changes()
+        self.text_box.setFocus()
 
     def _on_selection_drag_changed(self, active: bool) -> None:
         """Keep the tool window fixed under the pointer while selecting text."""
