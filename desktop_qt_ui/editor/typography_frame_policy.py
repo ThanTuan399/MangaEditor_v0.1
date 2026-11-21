@@ -72,3 +72,30 @@ def scale_rich_absolute_font_sizes(
             if math.isfinite(value) and value > 0:
                 style["fontSize"] = max(1, round(value * ratio, 2))
     return result
+
+
+
+def content_overflows_manual_frame(frame_rect: Any, dst_points: Any) -> bool:
+    """Check rendered-text extents against the *user's* box, not font scaling.
+
+    This diagnostic never changes text size, mask, or geometry. The preview
+    displays a warning so users can widen/raise the frame or adjust the font
+    intentionally when a long word or many lines do not fit.
+    """
+    if not isinstance(frame_rect, (tuple, list)) or len(frame_rect) != 4:
+        return False
+    try:
+        import numpy as np
+
+        box_w = float(frame_rect[2]) - float(frame_rect[0])
+        box_h = float(frame_rect[3]) - float(frame_rect[1])
+        points = np.asarray(dst_points, dtype=float).reshape(-1, 2)
+        if points.shape[0] < 4 or not np.isfinite(points).all():
+            return False
+        if box_w <= 0 or box_h <= 0:
+            return False
+        ink_w = float(np.linalg.norm(points[1] - points[0]))
+        ink_h = float(np.linalg.norm(points[3] - points[0]))
+        return ink_w > box_w + 1 or ink_h > box_h + 1
+    except (TypeError, ValueError, IndexError):
+        return False
