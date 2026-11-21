@@ -223,6 +223,52 @@ def test_translation_only_ui_preserves_legacy_typesetting_until_actual_edit(tmp_
         app.processEvents()
 
 
+def test_translation_only_editor_enter_advances_and_paste_is_plain():
+    from PyQt6.QtCore import Qt, QMimeData, QObject, pyqtSignal
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication
+    from ui.main_page.pages.ocr_workspace_page import OCRWorkspacePanel
+
+    class FakeState(QObject):
+        is_translating_changed = pyqtSignal(bool)
+        def is_translating(self):
+            return False
+
+    class FakeController(QObject):
+        file_sources_changed = pyqtSignal()
+        task_completed = pyqtSignal(list)
+        def __init__(self):
+            super().__init__()
+            self.state_manager = FakeState()
+            self.source_files = []
+
+    app = QApplication.instance() or QApplication([])
+    panel = OCRWorkspacePanel(FakeController(), t_func=lambda key, **kwargs: key)
+    try:
+        panel.current_regions = [
+            {"text": "A", "translation": ""},
+            {"text": "B", "translation": ""},
+        ]
+        panel._populate_table()
+        field = panel.manual_translation_edit
+        field.setPlainText("Xin chào")
+        assert panel.current_regions[0]["translation"] == "Xin chào"
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        assert panel.table.currentRow() == 1
+        assert panel.current_regions[0]["translation"] == "Xin chào"
+        assert field.toPlainText() == ""
+        field.insertFromMimeData(QMimeData())
+        mime = QMimeData()
+        mime.setText("Đúng rồi[BR]đó!\nBạn nhé")
+        field.insertFromMimeData(mime)
+        assert field.toPlainText() == "Đúng rồi đó! Bạn nhé"
+        assert panel.current_regions[1]["translation"] == "Đúng rồi đó! Bạn nhé"
+        assert "[BR]" not in panel.table.item(1, 2).text()
+    finally:
+        panel.close()
+        app.processEvents()
+
+
 def test_plain_translation_entry_does_not_inject_layout_breaks():
     assert translation_plain_for_ui("Đúng r[BR]ồi đó![BR]") == "Đúng rồi đó!"
     assert translation_plain_for_ui(
