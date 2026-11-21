@@ -15,6 +15,8 @@ from ui.manual_edition import (
 from ui.main_page.pages.manual_text import (
     manual_editor_to_text,
     manual_text_to_editor,
+    translation_plain_for_ui,
+    translation_input_to_plain,
     next_untranslated_region,
     translated_region_counts,
 )
@@ -131,13 +133,16 @@ def test_inpaint_disk_cache_is_safe_and_reusable(tmp_path):
     assert not is_valid_workspace_inpaint_cache(str(tmp_path / "missing.png"), signature)
 
 
-def test_manual_editor_keeps_cursor_and_persists_only_hard_breaks():
+def test_translation_only_ui_preserves_legacy_typesetting_until_actual_edit(tmp_path):
     from PyQt6.QtCore import QObject, pyqtSignal
     from PyQt6.QtWidgets import QApplication
     from ui.main_page.pages.ocr_workspace_page import OCRWorkspacePanel
+    import json
 
     class FakeState(QObject):
         is_translating_changed = pyqtSignal(bool)
+        def is_translating(self):
+            return False
 
     class FakeController(QObject):
         file_sources_changed = pyqtSignal()
@@ -155,34 +160,87 @@ def test_manual_editor_keeps_cursor_and_persists_only_hard_breaks():
     panel = OCRWorkspacePanel(
         FakeController(), t_func=lambda key, **kwargs: key.format(**kwargs)
     )
+    old = "Tự hỏi Ya[BR]mamoto[BR]muốn gì."
+    rich = {"format": "richtext.v1", "blocks": [{"paragraph": "manual"}]}
     try:
-        panel.current_regions = [
-            {"text": "そうだよ", "translation": "Đúng rồi đó!"},
+        regions = [
+            {
+                "text": "WONDER WHAT YAMAMOTO WANTS.",
+                "translation": old,
+                "translation_raw": old,
+                "translation_rich": rich,
+            },
             {"text": "何", "translation": ""},
         ]
+        saved = {"page": {"regions": regions}}
+        path = tmp_path / "page_translations.json"
+        path.write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
+        original_bytes = path.read_bytes()
+        panel.current_json_path = str(path)
+        panel.current_data = saved
+        panel.current_regions = regions
         panel._populate_table()
         assert panel.table.currentRow() == 0
-        assert panel.manual_translation_edit.toPlainText() == "Đúng rồi đó!"
+        assert panel.manual_translation_edit.toPlainText() == "Tự hỏi Yamamoto muốn gì."
+        assert panel.table.item(0, 2).text() == "Tự hỏi Yamamoto muốn gì."
+        assert not hasattr(panel, "insert_break_button")
+        assert panel._dirty is False
+        # Viewing/selection/save without edits must not rewrite old JSON.
+        panel._select_next_untranslated_region()
+        assert panel.table.currentRow() == 1
+        panel._select_next_translation_region()
+        assert panel.table.currentRow() == 0
+        assert panel.save_current(silent=True)
+        assert path.read_bytes() == original_bytes
+        assert regions[0]["translation"] == old
+        assert regions[0]["translation_rich"] == rich
+
         field = panel.manual_translation_edit
-        field.setPlainText("Đúng rồi\nđó!")
-        assert panel.current_regions[0]["translation"] == "Đúng rồi[BR]đó!"
-        assert panel.current_regions[0]["translation_raw"] == "Đúng rồi[BR]đó!"
-        assert field.toPlainText() == "Đúng rồi\nđó!"
+        field.setPlainText("Tự hỏi Yamamoto muốn gì chứ?")
+        assert panel.table.item(0, 2).text() == "Tự hỏi Yamamoto muốn gì chứ?"
+        assert panel.current_regions[0]["translation"] == "Tự hỏi Yamamoto muốn gì chứ?"
+        assert panel.current_regions[0]["translation_raw"] == "Tự hỏi Yamamoto muốn gì chứ?"
+        assert "translation_rich" not in panel.current_regions[0]
+        assert field.toPlainText() == "Tự hỏi Yamamoto muốn gì chứ?"
         assert panel._dirty
         assert panel.manual_translation_progress.text() == "1/2 đã dịch"
+        assert panel.save_current(silent=True)
+        assert not panel._dirty
+        assert (tmp_path / "page_translations.json.ocr_workspace.bak").is_file()
+        disk = json.loads(path.read_text(encoding="utf-8"))
+        assert disk["page"]["regions"][0]["translation"] == "Tự hỏi Yamamoto muốn gì chứ?"
 
         panel._select_next_untranslated_region()
         assert panel.table.currentRow() == 1
         field.setPlainText("Không!")
         assert panel.current_regions[1]["translation"] == "Không!"
         assert panel.manual_translation_progress.text() == "2/2 đã dịch"
-
         panel._select_next_translation_region()
         assert panel.table.currentRow() == 0
-        assert field.toPlainText() == "Đúng rồi\nđó!"
+        assert field.toPlainText() == "Tự hỏi Yamamoto muốn gì chứ?"
     finally:
         panel.close()
         app.processEvents()
+
+
+def test_plain_translation_entry_does_not_inject_layout_breaks():
+    assert translation_plain_for_ui("Đúng r[BR]ồi đó![BR]") == "Đúng rồi đó!"
+    assert translation_plain_for_ui(
+        "Tự hỏi Ya[BR]mamoto[BR]muốn gì.",
+        "WONDER WHAT YAMAMOTO WANTS.",
+    ) == "Tự hỏi Yamamoto muốn gì."
+    assert translation_plain_for_ui(
+        "Chắc cũng chỉ là[BR]mấy trò nhảm nhí[BR]thường thấy của[BR]mấy gã trai tán thôi."
+    ) == "Chắc cũng chỉ là mấy trò nhảm nhí thường thấy của mấy gã trai tán thôi."
+    assert translation_plain_for_ui("Đúng rồi[BR]đó!") == "Đúng rồi đó!"
+    assert translation_input_to_plain("Đúng rồi\nđó!") == "Đúng rồi đó!"
+    assert translation_input_to_plain("Đúng rồi[BR]đó!") == "Đúng rồi đó!"
+    assert translation_input_to_plain("Xin  chào\tbạn") == "Xin chào bạn"
+
+
+def test_legacy_manual_break_helpers_remain_available_to_editor():
+    assert manual_editor_to_text("Đúng rồi\nđó!") == "Đúng rồi[BR]đó!"
+    assert manual_text_to_editor("Đúng rồi[BR]đó!") == "Đúng rồi\nđó!"
 
 
 
