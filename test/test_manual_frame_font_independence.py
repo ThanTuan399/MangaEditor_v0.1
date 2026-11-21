@@ -145,3 +145,46 @@ def test_export_keeps_geometry_fields_and_font_size_after_render_roundtrip():
     assert saved["has_custom_white_frame"]
     reconstructed = TextBlock(**saved)
     assert reconstructed.manual_frame_width == 70
+
+
+
+def test_fit_button_is_explicit_and_keeps_frame_geometry(monkeypatch):
+    import manga_translator.rendering as renderer
+    from editor.geometry_commit_pipeline import fit_font_once_to_frame
+
+    def fake_box(font_size, text, horizontal, *args, **kwargs):
+        lines = text.replace("[BR]", "\n").splitlines() or [""]
+        width = max(len(line) for line in lines) * font_size * 0.55
+        height = len(lines) * font_size * 1.15
+        return (width, height, [], (width / 2, height / 2))
+
+    monkeypatch.setattr(renderer, "calc_box_from_font", fake_box)
+    monkeypatch.setattr(
+        "editor.text_renderer_backend.apply_font_for_render", lambda font: font
+    )
+
+    params = SimpleNamespace(
+        font_family="Arial", direction="h",
+        line_spacing=1.0, letter_spacing=1.0,
+        effective_stroke_width=0.07,
+    )
+    region = _region()
+    before = deepcopy(region)
+    fitted = fit_font_once_to_frame(
+        region, region["white_frame_rect_local"], params
+    )
+    assert fitted is not None
+    assert 8 <= fitted <= 31
+    # One-shot function proposes a font size but does not alter geometry or
+    # existing saved text; caller must execute an explicit undoable command.
+    assert region == before
+
+
+def test_render_reflow_is_idempotent_when_preview_redraws():
+    block = TextBlock(**_region())
+    metrics = lambda text: len(text) * 10.0
+    assert wrap_textblock_for_manual_frame(block, measure_width=metrics)
+    once = block.translation
+    assert not wrap_textblock_for_manual_frame(block, measure_width=metrics)
+    assert block.translation == once
+    assert block.font_size == 31
