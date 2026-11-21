@@ -431,7 +431,7 @@ class EditorController(QObject):
             return
         if result is not None:
             toast_manager.show_success(
-                f"Đã sao lưu cả chương: {result.pages} trang\\n{result.folder}",
+                f"Đã sao lưu cả chương: {result.pages} trang\n{result.folder}",
                 7000,
                 result.folder,
             )
