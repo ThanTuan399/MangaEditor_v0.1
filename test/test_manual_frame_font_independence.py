@@ -97,17 +97,30 @@ def test_wrapping_textblock_does_not_change_selected_font_or_original_document()
     assert block.to_dict()["has_custom_white_frame"] is True
 
 
-def test_styled_rich_runs_are_not_silently_replaced_by_plain_wrap():
+def test_styled_rich_runs_reflow_without_losing_character_formatting():
+    from manga_translator.rendering.rich_text import plain_text_of
+
     region = _region()
     styled = legacy_line_breaks_to_document("Đúng rồi đó!").to_dict()
-    styled["blocks"][0]["inlines"][0]["style"] = {"bold": True}
+    styled["blocks"][0]["inlines"][0]["style"] = {
+        "bold": True, "color": "#ff0000", "fontSize": 22
+    }
     region["translation_rich"] = styled
+    before = deepcopy(region)
     block = TextBlock(**region)
-    assert not wrap_textblock_for_manual_frame(
-        block, measure_width=lambda text: len(text) * 10
+    assert wrap_textblock_for_manual_frame(
+        block, measure_width=lambda rich: len(plain_text_of(rich)) * 10
     )
-    assert block.translation_rich is not None
+    paragraphs = block.translation_rich["blocks"]
+    assert len(paragraphs) >= 2
+    assert all(
+        inline["style"]["bold"]
+        and inline["style"]["color"] == "#ff0000"
+        and inline["style"]["fontSize"] == 22
+        for paragraph in paragraphs for inline in paragraph["inlines"]
+    )
     assert block.font_size == 31
+    assert region == before  # layout only; no style/BR writes into saved JSON
 
 
 def test_no_manual_frame_means_no_forced_wrap():
@@ -283,3 +296,72 @@ def test_larger_frame_changes_only_word_wrap_not_font_size():
     assert narrow_block.manual_frame_width == 50
     assert wide_block.manual_frame_width == 240
     assert narrow_block.translation.count("[BR]") >= wide_block.translation.count("[BR]")
+
+
+
+def test_unstyled_rich_document_does_not_override_automatic_word_wrap():
+    region = _region()
+    region["translation_rich"] = legacy_line_breaks_to_document(
+        "Đúng rồi đó!"
+    ).to_dict()
+    original = deepcopy(region)
+    block = TextBlock(**region)
+    assert wrap_textblock_for_manual_frame(
+        block, measure_width=lambda value: len(value) * 10
+    )
+    assert block.translation == "Đúng[BR]rồi[BR]đó!"
+    assert block.translation_rich is None
+    assert region == original
+
+
+def test_word_wrap_crosses_inline_style_boundaries_without_splitting_a_word():
+    from manga_translator.rendering.manual_typesetting import (
+        wrap_rich_document_fixed_font,
+    )
+    from manga_translator.rendering.rich_text import (
+        RichTextDocument, Paragraph, TextRun, TextStyle, plain_text_of,
+    )
+
+    doc = RichTextDocument(blocks=[Paragraph(inlines=[
+        TextRun("Yama", TextStyle(bold=True)),
+        TextRun("moto tới đây", TextStyle(color="#ff0000")),
+    ])])
+    original = doc.to_dict()
+    wrapped, changed = wrap_rich_document_fixed_font(
+        doc, 85.0, lambda value: len(plain_text_of(value)) * 10.0
+    )
+    assert changed
+    assert wrapped.plain_text() == "Yamamoto\n tới đây".replace("\n ", "\n")
+    assert len(wrapped.blocks) >= 2
+    assert wrapped.blocks[0].inlines[0].text == "Yama"
+    assert wrapped.blocks[0].inlines[0].style.bold
+    assert wrapped.blocks[0].inlines[1].text == "moto"
+    assert wrapped.blocks[0].inlines[1].style.color == "#ff0000"
+    assert doc.to_dict() == original
+
+
+def test_frame_resize_preview_uses_transient_render_path():
+    from ui.editor.graphics_view_rendering import GraphicsViewRenderingMixin
+
+    preview_calls = []
+    fake_view = GraphicsViewRenderingMixin()
+    fake_view._region_items = [SimpleNamespace(
+        scene=lambda: object(),
+        _is_dragging=True,
+        _interaction_mode="white_edge",
+    )]
+    fake_view._manual_frame_preview_index = 0
+    fake_view._recalculate_single_region_render_data = lambda i: preview_calls.append(("calc", i))
+    fake_view._render_region_text_visual = (
+        lambda i, *, persist_render_box: preview_calls.append(
+            ("render", i, persist_render_box)
+        )
+    )
+    fake_view._flush_manual_frame_preview()
+    assert preview_calls == [("calc", 0), ("render", 0, False)]
+
+    # A queued preview after releasing the mouse must not re-render or write.
+    fake_view._region_items[0]._is_dragging = False
+    fake_view._manual_frame_preview_index = 0
+    fake_view._flush_manual_frame_preview()
+    assert len(preview_calls) == 2

@@ -125,3 +125,22 @@ Trong Editor, chọn vùng thoại rồi chỉnh trong **Property Editor → Sty
 **Tương thích:** Nếu JSON cũ mang \`font_fit_mode: auto\`, từ bản này khi bạn kéo/chỉnh khung hoặc chọn cỡ chữ, vùng đó chuyển sang chế độ **fixed**. Phần mềm cũng không lấy font/câu dịch cũ từ đối tượng canvas để ghi đè dữ liệu mới sau thao tác kéo khung. Các thay đổi vẫn có Undo và được lưu khi bạn Save Editor State/JSON.
 
 **Lưu ý:** Với những vùng dùng định dạng Rich Text phức tạp (ruby, nhiều kiểu ký tự), việc tự ngắt dòng có thể bị giới hạn để tránh làm mất định dạng. Khi chữ vượt khung, viền cam giúp bạn nhận ra thay vì xuất ảnh lỗi mà không báo.
+
+
+## Khung chữ kiểu Microsoft Word (bản xem trước trực tiếp)
+
+- Kéo **cạnh/góc** khung thoại trên canvas: ứng dụng dàn lại từ theo chiều rộng hiện tại ngay trong lúc kéo (tối đa khoảng 13 lần/giây), không tăng/giảm Font Size hay tự ghi dấu [BR] vào bản dịch.
+- Kéo **chiều cao** chỉ thay đổi khoảng trống của khung. Viền cam báo khi kích thước chữ hiện tại không đủ vừa.
+- Đổi **Font, Font Size** chỉ tác động đến kiểu chữ, không thay kích thước khung. Nút **Khớp chữ với khung (1 lần)** vẫn là thao tác chủ động nếu muốn tự tính một cỡ chữ để vừa khung.
+- Rich Text nhiều cỡ chữ, in đậm, đổi màu sẽ được dàn lại tại khoảng trắng giữa các từ, vẫn giữ nguyên định dạng từng đoạn. Ruby/TCY được coi là một đơn vị không thể xé đôi. Ngắt dòng do người dùng nhập được giữ nguyên.
+- Dàn dòng khi kéo chỉ là **bản xem trước trong bộ nhớ**. Khi thả chuột, thay đổi hình học mới được đưa vào Undo và lưu qua Save Editor State/JSON. Không ghi đè nội dung dịch cũ.
+- Preview có giới hạn tần suất để tránh render trên mỗi sự kiện chuột; với trang phức tạp, máy chậm có thể không đạt tốc độ 13 lần/giây. Cần kiểm tra thực tế trên Windows cùng font và trang truyện trước khi gộp PR.
+- Nếu một từ đơn dài hơn cả chiều rộng khung, ứng dụng không tự cắt âm tiết hoặc thu nhỏ font: chỉnh cỡ chữ hoặc nới khung. Các kiểu text đặc biệt không thể ngắt an toàn có thể giữ dòng gốc.
+
+### Kiểm tra nhanh theo video
+
+1. Chọn một vùng có câu dài; ghi Font Size và kéo cạnh phải từ hẹp sang rộng rồi lại hẹp. Số dòng phải thay đổi trong khi kéo; Font Size giữ nguyên.
+2. Kéo cạnh dưới cao/thấp: nội dung không phóng đại, font không đổi.
+3. Đặt Font Size khác (ví dụ 20 → 32): khung không đổi, số dòng có thể thay đổi theo độ rộng; bấm Undo để quay lại.
+4. Tạo Rich Text gồm chữ đậm/chữ đỏ/chữ thường trong một câu, kéo khung, xác nhận kiểu chữ vẫn đúng; lưu, đóng mở lại và xuất ảnh so với preview.
+5. Kiểm tra JSON sau khi kéo khung: các ngắt dòng mềm mới không xuất hiện trong translation hoặc translation_rich.

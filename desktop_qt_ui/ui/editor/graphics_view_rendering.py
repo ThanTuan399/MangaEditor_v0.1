@@ -28,6 +28,41 @@ from .graphics_items import RegionTextItem
 
 
 class GraphicsViewRenderingMixin:
+    def _queue_manual_frame_preview(self, index: int) -> None:
+        """Throttle live text reflow during a frame drag (no JSON/history write).
+
+        Start the timer only when idle: repeated mouse moves must not postpone
+        the preview indefinitely. Only the latest geometry is rendered.
+        """
+        self._manual_frame_preview_index = int(index)
+        timer = getattr(self, "_manual_frame_preview_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(75)
+            timer.timeout.connect(self._flush_manual_frame_preview)
+            self._manual_frame_preview_timer = timer
+        if not timer.isActive():
+            timer.start()
+
+    def _flush_manual_frame_preview(self) -> None:
+        index = getattr(self, "_manual_frame_preview_index", None)
+        self._manual_frame_preview_index = None
+        if index is None or not (0 <= index < len(self._region_items)):
+            return
+        item = self._region_items[index]
+        if (
+            item is None
+            or item.scene() is None
+            or not getattr(item, "_is_dragging", False)
+            or getattr(item, "_interaction_mode", "") not in ("white_corner", "white_edge")
+        ):
+            return
+        # The snapshot reads live item.geo geometry, but the model stays
+        # untouched until mouseReleaseEvent emits the undoable edit.
+        self._recalculate_single_region_render_data(index)
+        self._render_region_text_visual(index, persist_render_box=False)
+
     def _schedule_render_update(self) -> None:
         # 场景里还没有 region item 时（切图/清空后的首次重建）立即执行，避免防抖延迟出现空白帧；
         # 已有内容时用防抖合并连续的整批重建请求。
@@ -315,7 +350,7 @@ class GraphicsViewRenderingMixin:
             geo_state=geo_state,
         )
 
-    def _render_region_text_visual(self, index: int):
+    def _render_region_text_visual(self, index: int, *, persist_render_box: bool = True):
         if not (0 <= index < len(self._region_items)):
             return
         item = self._region_items[index]
@@ -397,7 +432,7 @@ class GraphicsViewRenderingMixin:
                 pixmap, pos = render_result
                 actual_dst_points = dst_points
             item.set_dst_points(actual_dst_points)
-            if index not in getattr(self, "_font_preview_overrides", {}):
+            if persist_render_box and index not in getattr(self, "_font_preview_overrides", {}):
                 self._persist_single_render_box(index, actual_dst_points)
             item.update_text_pixmap(
                 pixmap,

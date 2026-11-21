@@ -797,7 +797,8 @@ class PropertyPanel(QWidget):
         style_layout.addRow(self.font_size_label, self.font_size_input)
         style_layout.addRow(CaptionLabel(""), self.font_size_slider)
         self.frame_font_help = CaptionLabel(
-            "Kéo khung = đổi vị trí/ngắt dòng, không đổi Font Size. "
+            "Giống Text Box trong Word: kéo cạnh/góc để dàn dòng trực tiếp, "
+            "không đổi Font Size; đổi font không kéo giãn khung. "
             "Viền cam = chữ vượt khung."
         )
         self.frame_font_help.setWordWrap(True)
