@@ -663,11 +663,11 @@ class EditorController(QObject):
         if field_name == "font_size":
             from .typography_frame_policy import scale_rich_absolute_font_sizes
 
-            new_region_data["translation_rich"] = scale_rich_absolute_font_sizes(
-                old_region_data.get("translation_rich"),
-                old_region_data.get("font_size"),
-                value,
-            ) if old_region_data.get("translation_rich") is not None else None
+            old_rich = old_region_data.get("translation_rich")
+            if old_rich is not None:
+                new_region_data["translation_rich"] = scale_rich_absolute_font_sizes(
+                    old_rich, old_region_data.get("font_size"), value
+                )
         if field_name == 'direction':
             # A direction selected in the editor is intentional, even when it
             # differs from the target language's default writing direction.
