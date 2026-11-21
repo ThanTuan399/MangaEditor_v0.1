@@ -17,7 +17,12 @@ from .rich_text import is_redundant_plain_document
 
 _BR = r"(?:\[BR\]|【BR】|<br\s*/?>)"
 _TOKEN = r"[^\W\d_]+"
-_GAP = re.compile(rf"({_TOKEN})(\s*{_BR}\s*|\s+)({_TOKEN})", re.I | re.U)
+# The right-hand token is a lookahead, not consumed: neighboring breaks
+# must both be examined (e.g. "hu[BR]ấn luyện ch[BR]o").
+_GAP = re.compile(
+    rf"(?P<left>{_TOKEN})(?P<gap>\s*{_BR}\s*|\s+)(?=(?P<right>{_TOKEN}))",
+    re.I | re.U,
+)
 _BR_ONLY = re.compile(_BR, re.I)
 _WORD = re.compile(_TOKEN, re.U)
 
@@ -64,10 +69,12 @@ def recover_split_words(text: str | None, ocr_text: str | None = None, *, prose:
     result = original
     for _ in range(5):
         def fix(match):
-            left, boundary, right = match.groups()
+            left = match.group("left")
+            boundary = match.group("gap")
+            right = match.group("right")
             hard_break = bool(_BR_ONLY.search(boundary))
             if _confident_join(left, right, hard_break=hard_break, source_tokens=source_tokens):
-                return left + right
+                return left  # next word belongs to the lookahead, not this match
             return match.group(0)
         next_result = _GAP.sub(fix, result)
         if next_result == result:
