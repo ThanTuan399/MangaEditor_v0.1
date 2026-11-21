@@ -89,7 +89,11 @@ def wrap_textblock_for_manual_frame(region, *, measure_width=None) -> bool:
     # Some space on both sides for accents / strokes / glyph overhang.
     available_width = max(4.0, width - max(4.0, font_size * 0.4))
     if measure_width is None:
-        from . import calc_box_from_font
+        from . import calc_box_from_font, text_render
+
+        # Measure with the same font face used for drawing.
+        family = getattr(region, "font_family", "") or text_render.DEFAULT_FONT_FAMILY
+        text_render.set_font(family)
 
         def measure_width(text: str) -> float:
             w, _, _, _ = calc_box_from_font(
