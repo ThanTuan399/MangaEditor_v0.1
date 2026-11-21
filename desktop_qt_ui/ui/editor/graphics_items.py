@@ -1597,6 +1597,13 @@ class RegionTextItem(QGraphicsItemGroup):
             self.update()
             self._invalidate_scene_rect(old_rect)
 
+            # Word-like textbox: reflow with the new width while dragging.
+            # The view throttles actual rendering and never writes transient
+            # frame geometry or soft line breaks into the project model.
+            view = self._primary_view()
+            if view is not None and hasattr(view, "_queue_manual_frame_preview"):
+                view._queue_manual_frame_preview(self.region_index)
+
         except Exception as e:
             logger.error(
                 f"[RegionTextItem] _handle_white_frame_edit: {e}\n{traceback.format_exc()}"
