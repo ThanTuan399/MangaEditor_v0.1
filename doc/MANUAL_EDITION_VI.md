@@ -17,19 +17,12 @@ Các dịch vụ dịch AI, Prompt Manager và màn hình API được **ẩn kh
 - Mở app → **OCR Workspace** (mặc định).
 - **Thêm thư mục dự án** và **Scan OCR Only** nếu chương chưa được quét OCR.
 - Chọn một hàng trong bảng OCR; nội dung gốc được tô sáng trên preview.
-- Gõ bản dịch vào ô **Bản dịch vùng đang chọn**. **Enter** tạo ngắt dòng cứng; wrap tự động do ô hẹp không tạo \`[BR]\`.
-- Dùng nút **↵ Xuống dòng**, **Vùng tiếp →**, **Vùng chưa dịch tiếp theo**; tiến độ **đã dịch/tổng vùng** hiển thị bên cạnh.
+- Nhập văn bản thuần vào ô **Nội dung bản dịch · Không dàn chữ**. Cột **Translation** và ô nhập không hiển thị mã `[BR]` trong file cũ; ngắt dòng, font và vị trí chữ chỉ được chỉnh trong **Editor**.
+- Dùng **Vùng tiếp →**, **Vùng chưa dịch tiếp theo** để di chuyển nhanh; tiến độ **đã dịch/tổng vùng** hiển thị bên cạnh. Nút **↵ Xuống dòng** không còn ở OCR Workspace.
 - **Tự lưu (mặc định bật):** sau 1,5 giây không gõ, ứng dụng tự lưu JSON và giữ bản sao `.ocr_workspace.bak`. Có thể tắt bằng ô **Tự lưu bản dịch**. **Ctrl+S** hoặc **Save JSON** vẫn lưu tức thì. Dùng Copy All OCR/Paste Batch nếu muốn dịch hàng loạt theo ID.
 - **Render trang đang chọn** để xem kết quả; **Render trang đã đổi** cho chương; mở **Editor** để điều chỉnh font, lớp mask, Paint, Clone và xuất ảnh.
 
-Ví dụ ô biên tập:
-
-\`\`\`text
-Đúng rồi
-đó!
-\`\`\`
-
-Dữ liệu được lưu thành \`Đúng rồi[BR]đó!\`; dấu \`[BR]\` xuất hiện chỉ bởi Enter/chỉnh sửa có chủ ý, không phải bởi text wrap trong ô biên tập. Bản sửa ngăn auto-wrap làm thay đổi dữ liệu đã có ở PR #2 vẫn được giữ lại.
+Ví dụ, file cũ có `Đúng rồi[BR]đó!` sẽ hiển thị dưới dạng **Đúng rồi đó!** ở OCR Workspace. Khi chỉ xem và chuyển vùng, **dữ liệu JSON cũ và định dạng Rich Text không bị sửa**. Nếu bạn sửa câu đó, chương trình lưu lại bản dịch thuần không chứa `[BR]`; định dạng cũ của riêng vùng này cần được chỉnh lại trong Editor.
 
 ## Tốc độ LaMa
 
@@ -80,3 +73,10 @@ Remove-Item Env:MANGA_EDITOR_UI -ErrorAction SilentlyContinue
 - Không xóa Python/Ollama/API modules ngay, vì dịch tự động và thủ công đang dùng chung một số thành phần.
 - Các tối ưu chưa thực hiện trong lần này: thay thế hoàn toàn giao diện Editor; bỏ hẳn dịch AI khỏi bản build; GPU benchmark; inpaint chia nhóm thông minh.
 - Cần kiểm tra với tập ảnh manga thực tế và trên cấu hình CPU/GPU của bạn trước khi công nhận chất lượng render.
+
+## Chương manga đã chỉnh sửa từ trước
+
+- Các dấu `[BR]` của ảnh đã render **chỉ được ẩn khỏi giao diện dịch**; không xóa khỏi file khi mở chương. Editor vẫn nhận đúng nội dung cũ để tiếp tục trình bày.
+- Khi có thể, giao diện ghép những mảnh từ bị chia bởi `[BR]`, ví dụ `Ya[BR]mamoto` nếu trong OCR gốc có chữ `YAMAMOTO`; các ranh giới từ không chắc sẽ dùng dấu cách để tránh gộp sai.
+- Bảng **Translation**, ô nhập và Export Batch TXT hiển thị/nội dung văn bản thuần, không dùng lệnh định dạng.
+- Thay đổi nội dung dịch một vùng đồng nghĩa tạo bản dịch mới cho vùng đó: chỉ khi đó các ngắt dòng/định dạng Rich Text cũ không còn hợp lệ; nên lưu JSON dự phòng trước khi sửa.
