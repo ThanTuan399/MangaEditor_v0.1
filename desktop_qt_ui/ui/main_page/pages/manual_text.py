@@ -49,42 +49,15 @@ _WORD = re.compile(r"[^\W_]+", re.UNICODE)
 def translation_plain_for_ui(
     translation: str | None, original_ocr: str | None = None
 ) -> str:
-    """Return readable prose without any stored typesetting line breaks.
+    """Display translated prose without damaging saved Editor hard breaks.
 
-    This is a *view* of historical JSON: opening an OCR project never modifies
-    its saved manual [BR] layout or rich text. The prior renderer could split a
-    single word across [BR]. Rejoin only a very short fragment (one letter) or
-    two fragments whose joined spelling occurs as a word in the original OCR
-    (e.g. Ya[BR]mamoto with YAMAMOTO in the source). Otherwise use a space:
-    do not silently turn intentional separate words into one word.
+    A legacy page may contain old [BR] between syllables or literal spaces
+    left over after a previous cleanup. Reconstruct only high-confidence
+    word fragments; any still-ambiguous boundary displays as a space.
     """
-    source_words = {
-        word.casefold()
-        for word in _WORD.findall(str(original_ocr or ""))
-    }
-    parts = _BREAK.split(str(translation or "").replace("\r\n", "\n").replace("\r", "\n"))
-    merged = ""
-    for fragment in parts:
-        fragment = " ".join(fragment.split())
-        if not fragment:
-            continue
-        if not merged:
-            merged = fragment
-            continue
-        previous = _WORD.findall(merged)
-        following = _WORD.match(fragment)
-        prev_word = previous[-1] if previous and merged.endswith(previous[-1]) else ""
-        next_word = following.group(0) if following else ""
-        joined = prev_word + next_word
-        should_join = (
-            bool(prev_word and next_word)
-            and (
-                len(prev_word) == 1
-                or (bool(source_words) and joined.casefold() in source_words)
-            )
-        )
-        merged += ("" if should_join else " ") + fragment
-    return " ".join(merged.split())
+    from manga_translator.rendering.legacy_word_recovery import recover_split_words
+
+    return recover_split_words(translation, original_ocr, prose=True)
 
 
 def translation_input_to_plain(value: str | None) -> str:
