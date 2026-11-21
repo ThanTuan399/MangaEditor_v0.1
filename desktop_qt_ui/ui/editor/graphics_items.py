@@ -181,6 +181,7 @@ class RegionTextItem(QGraphicsItemGroup):
         # 显示
         self._polygons_visible = True
         self._show_white_box = True
+        self._text_overflows_frame = False
         self._shape_path = None
 
         # 旋转角度标签（场景级别，懒加载）
@@ -481,6 +482,19 @@ class RegionTextItem(QGraphicsItemGroup):
             QPointF(left, (top + bottom) / 2),
         ]
 
+    def set_text_overflows_frame(self, overflows: bool) -> None:
+        """Warn visually about clipping risk without changing font or frame."""
+        overflows = bool(overflows)
+        if self._text_overflows_frame == overflows:
+            return
+        self._text_overflows_frame = overflows
+        self.setToolTip(
+            "⚠ Chữ đang vượt ra ngoài khung thoại. Hãy giảm Font Size, "
+            "tăng chiều cao/độ rộng khung hoặc bấm Khớp chữ với khung (1 lần)."
+            if overflows else ""
+        )
+        self.update()
+
     def _draw_white_box(self, painter, is_selected: bool):
         wf = self.geo.white_frame_local
         if wf is None:
@@ -501,7 +515,11 @@ class RegionTextItem(QGraphicsItemGroup):
             painter.setPen(_editor_pen(_shadow_color(135), 5.0 / lod))
             painter.drawPolygon(poly)
             painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-            painter.setPen(_editor_pen(_fluent_accent(235), 2.35 / lod))
+            frame_color = (
+                QColor(236, 153, 60, 245)
+                if self._text_overflows_frame else _fluent_accent(235)
+            )
+            painter.setPen(_editor_pen(frame_color, 2.35 / lod))
             painter.drawPolygon(poly)
         else:
             lod = self._lod()
