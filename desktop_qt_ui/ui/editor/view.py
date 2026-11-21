@@ -1,9 +1,11 @@
 from functools import partial
+import os
 from typing import Any
 
 from PyQt6.QtCore import QPointF, QRect, QSize, Qt, QTimer, pyqtSlot
 from PyQt6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QHBoxLayout,
     QSizePolicy,
     QSplitter,
@@ -556,6 +558,54 @@ class EditorView(QWidget):
             self.rich_text_editor.flush_pending_changes()
         return self.controller.export_image()
 
+    def backup_chapter_folder(self):
+        """Save the entire active chapter into one portable directory.
+
+        Save the live page first; previously visited pages have their own
+        persisted project JSON (auto-save or explicit Save), and are copied
+        with the source directories without rewriting the originals.
+        """
+        files = [
+            item.path for item in self.logic.file_model.files
+            if getattr(item, "path", None)
+        ]
+        if not files:
+            toast = self.controller.get_toast_manager()
+            if toast is not None:
+                toast.show_error("Không có trang truyện nào để sao lưu.", 4000)
+            return False
+
+        source = self.model.get_source_image_path()
+        if not source:
+            toast = self.controller.get_toast_manager()
+            if toast is not None:
+                toast.show_error("Hãy mở trang cần chỉnh sửa trước khi sao lưu cả chương.", 4000)
+            return False
+
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Chọn nơi lưu thư mục sao lưu cả chương",
+            os.path.dirname(os.path.dirname(os.path.abspath(source))),
+            QFileDialog.Option.ShowDirsOnly,
+        )
+        if not selected:
+            return False
+
+        if not self.save_editor_state():
+            return False
+
+        source_folders = tuple(
+            getattr(self.logic, "_source_folders", {}).values()
+        )
+        accepted = self.controller.export_service.backup_chapter_folder(
+            files, selected, source_folders=source_folders,
+        )
+        if not accepted:
+            toast = self.controller.get_toast_manager()
+            if toast is not None:
+                toast.show_error("Không thể bắt đầu sao lưu: hàng đợi đã đóng.", 5000)
+        return accepted
+
     def _on_floating_editor_style_changed(
         self, region_index: int, patch: dict
     ) -> None:
@@ -928,6 +978,7 @@ class EditorView(QWidget):
 
         for signal, slot in (
             (self.toolbar.save_requested, self.save_editor_state),
+            (self.toolbar.backup_chapter_requested, self.backup_chapter_folder),
             (self.toolbar.export_requested, self.export_image),
             (self.toolbar.undo_requested, self.controller.undo),
             (self.toolbar.redo_requested, self.controller.redo),
