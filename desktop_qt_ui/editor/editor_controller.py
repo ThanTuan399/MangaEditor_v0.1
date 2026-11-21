@@ -106,7 +106,13 @@ def _sync_white_frame_size_for_font_change(
     纯文本前后差值均为零，行为与"保持框中心"完全一致；富文本增删注音
     时正文本体钉住不动，渲染框向装饰一侧扩缩。
     标记 has_custom_white_frame=True 让其优先于 render_box 主导渲染中心。
+
+    Manual Edition: frame dimensions belong to the user, not to the font.
+    Preserve the frame on text/font edits; only legacy explicit auto-fit mode
+    can use the historical coupled behavior.
     """
+    if region_data.get("font_fit_mode") != "auto":
+        return
     try:
         from manga_translator.rendering import calc_box_from_font
 
