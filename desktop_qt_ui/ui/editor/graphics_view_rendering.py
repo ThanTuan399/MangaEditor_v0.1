@@ -370,6 +370,18 @@ class GraphicsViewRenderingMixin:
             unrotated_text_block,
         )
 
+        # The actual text geometry can exceed a narrow user frame. Never
+        # shrink the font silently to hide it: warn in amber and let the user
+        # resize the frame, adjust Size or explicitly fit once.
+        from editor.typography_frame_policy import content_overflows_manual_frame
+
+        has_user_frame = bool(snapshot.region_data.get("has_custom_white_frame"))
+        item.set_text_overflows_frame(
+            has_user_frame and content_overflows_manual_frame(
+                snapshot.white_frame_local, dst_points
+            )
+        )
+
         render_result = render_region_text(
             text_renderer_backend,
             unrotated_text_block,
