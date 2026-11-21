@@ -1532,6 +1532,12 @@ def _layout_regions_to_font_size(
                 anchor_modes[region_idx] = skip_anchor_mode
                 fixed_font_size = region.font_size if region.font_size > 0 else round((img.shape[0] + img.shape[1]) / 200)
                 logger.debug(f"[RESIZE] skip_font_scaling: region {region_idx} uses fixed font size {fixed_font_size}")
+                # Same word-only reflow as Editor preview. This changes the
+                # temporary TextBlock, never JSON: dispatch_preserving_source
+                # restores translation/translation_rich before serialization.
+                from .manual_typesetting import wrap_textblock_for_manual_frame
+
+                wrap_textblock_for_manual_frame(region)
 
                 # 直接用固定字体大小计算文本框
                 # 需要考虑 direction 强制覆盖（和 render() 中的判断逻辑一致）
