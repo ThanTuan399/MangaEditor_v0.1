@@ -1050,6 +1050,10 @@ class EditorView(QWidget):
                 self.property_panel.style_patch_requested,
                 self.controller.update_region_style_patch,
             ),
+            (
+                self.property_panel.fit_font_to_frame_requested,
+                self.controller.fit_font_to_frame_once,
+            ),
             (self.property_panel.copy_region_requested, self._handle_copy_from_panel),
             (self.property_panel.paste_region_requested, self._handle_paste_from_panel),
             (
