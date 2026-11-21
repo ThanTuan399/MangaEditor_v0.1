@@ -133,6 +133,23 @@ class TextBlock(object):
         self._direction = direction
         # Explicit user direction survives OCR-derived vertical-layout migration.
         self.direction_user_override = bool(kwargs.get('direction_user_override', False))
+        # A user-drawn Editor frame constrains *line wrapping* only.
+        # Its width is independent of the requested font size and is not
+        # serialized into translation content.
+        self.manual_frame_width = None
+        self.manual_white_frame_local = None
+        self.font_fit_mode = kwargs.get('font_fit_mode', 'fixed')
+        if bool(kwargs.get('has_custom_white_frame', False)):
+            rect = kwargs.get('white_frame_rect_local')
+            if isinstance(rect, (list, tuple)) and len(rect) == 4:
+                try:
+                    rect_floats = [float(value) for value in rect]
+                    width = rect_floats[2] - rect_floats[0]
+                    if width > 0:
+                        self.manual_frame_width = width
+                        self.manual_white_frame_local = rect_floats
+                except (ValueError, TypeError):
+                    pass
 
         self.texts = texts if texts is not None else []
         self.text = texts[0]
@@ -458,6 +475,11 @@ class TextBlock(object):
             'prob': self.prob,
             'font_family': getattr(self, 'font_family', ''),
         }
+        if self.manual_white_frame_local is not None:
+            result['has_custom_white_frame'] = True
+            result['white_frame_rect_local'] = self.manual_white_frame_local
+        if self.font_fit_mode == 'auto':
+            result['font_fit_mode'] = 'auto'
         if self.translation_rich is not None:
             from ..rendering.rich_text import is_redundant_plain_document
 

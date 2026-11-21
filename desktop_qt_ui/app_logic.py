@@ -2077,8 +2077,10 @@ class MainAppLogic(QObject):
             project_root=project_root,
         )
 
-    def start_ocr_workspace_render(self, project_images=None, project_root=None):
-        """Render all OCR Workspace JSON translations without translating again."""
+    def start_ocr_workspace_render(
+        self, project_images=None, project_root=None, fast_inpaint=False,
+    ):
+        """Render OCR JSON only; optional 1024px LaMa preset is task-local."""
         if self.state_manager.is_translating():
             self._ui_log("A task is already running.", "WARNING")
             return
@@ -2126,6 +2128,15 @@ class MainAppLogic(QObject):
             "export_from_local_json",
         ):
             cli[key] = False
+
+        if fast_inpaint:
+            inpaint_settings = task_config.setdefault("inpainter", {})
+            original_size = int(inpaint_settings.get("inpainting_size") or 2048)
+            inpaint_settings["inpainting_size"] = min(original_size, 1024)
+            self._ui_log(
+                f"Manual Edition fast inpainting: {original_size} -> "
+                f"{inpaint_settings['inpainting_size']}px (task only)"
+            )
 
         # Existing JSON is the source of truth. Load it and render only.
         cli["ocr_workspace_scan"] = False

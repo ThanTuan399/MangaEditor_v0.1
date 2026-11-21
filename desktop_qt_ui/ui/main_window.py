@@ -20,6 +20,11 @@ from services import (
 from services.file_list_data_service import FileCatalogSnapshot, FileListDataService
 from theme_registry import THEME_OPTIONS
 from ui.main_page.view import MainView
+from ui.manual_edition import (
+    manual_edition_enabled,
+    filter_manual_navigation,
+    initial_manual_page_key,
+)
 from ui.secondary_pages.themed_message_box import show_error_dialog
 from utils.app_version import format_app_title, get_app_version
 
@@ -84,7 +89,8 @@ class MainWindow(FluentWindow):
 
     def _update_window_title(self):
         """Keep the product name stable across interface languages."""
-        self.setWindowTitle(format_app_title("Manga Translator UI", self.app_version))
+        app_name = "MangaEditor — Manual Edition" if manual_edition_enabled() else "Manga Translator UI"
+        self.setWindowTitle(format_app_title(app_name, self.app_version))
 
     def _setup_logic_and_models(self):
         """实例化所有逻辑和数据模型"""
@@ -190,13 +196,16 @@ class MainWindow(FluentWindow):
                 self._t("About Application"),
             ),
         ]
+        if manual_edition_enabled():
+            pages = filter_manual_navigation(pages)
         for key, page, icon, text in pages:
             page.setObjectName(f"main_{key}_page")
             self._main_navigation_items[key] = self.addSubInterface(page, icon, text)
 
         self._main_pages_by_widget = {page: key for key, page, _icon, _text in pages}
         self.main_view.set_navigation_switcher(self._switch_main_page)
-        self.switchTo(self.main_view.translation_interface)
+        startup_key = initial_manual_page_key(manual_edition_enabled())
+        self.switchTo(self.main_view.page_widgets[startup_key])
 
     def _switch_main_page(self, page_key: str):
         page = (
@@ -477,7 +486,11 @@ class MainWindow(FluentWindow):
 
         # --- View Switching Connections ---
         self.main_view_action.triggered.connect(
-            lambda: self.switchTo(self.main_view.translation_interface)
+            lambda: self.switchTo(
+                self.main_view.ocr_workspace_page
+                if manual_edition_enabled()
+                else self.main_view.translation_interface
+            )
         )
         self.editor_view_action.triggered.connect(self.switch_to_editor_view)
 

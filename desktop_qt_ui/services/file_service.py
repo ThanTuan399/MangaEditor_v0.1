@@ -102,6 +102,22 @@ class FileService:
                     repaired_count, os.path.basename(json_path),
                 )
 
+            # The OCR translation pane deliberately keeps old formatting on
+            # disk, but Editor needs to recover obvious split syllables from
+            # both original [BR] and spaces left by earlier BR removal.
+            # Only unstyled rich paragraphs are reconstructed; user-styled
+            # paragraphs and intentional word-boundary breaks are protected.
+            from manga_translator.rendering.legacy_word_recovery import (
+                repair_editor_region_list,
+            )
+            split_repair_count = repair_editor_region_list(regions)
+            if split_repair_count:
+                self.logger.info(
+                    "Recovered syllables split by legacy layout in %d Editor regions "
+                    "of %s (in memory, not written to disk yet)",
+                    split_repair_count, os.path.basename(json_path),
+                )
+
             # Old manga OCR projects may store the Japanese vertical source
             # direction on Vietnamese text. Correct it in memory so both the
             # Editor orientation controls and canvas agree on horizontal text.

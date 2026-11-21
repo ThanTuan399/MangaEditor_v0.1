@@ -48,7 +48,14 @@ def build_text_block_from_region(region_data: dict, font_size_override=None, log
         if font_size_override is not None:
             args["font_size"] = font_size_override
 
-        return TextBlock(**args)
+        block = TextBlock(**args)
+        # Render-only, word-safe reflow at the *user's* font size. Keep the
+        # original region JSON and Rich Text document unchanged.
+        from manga_translator.rendering.manual_typesetting import (
+            wrap_textblock_for_manual_frame,
+        )
+        wrap_textblock_for_manual_frame(block)
+        return block
     except (ValueError, TypeError, KeyError, IndexError) as exc:
         # 非法区域数据不再被静默吞掉：记录后跳过该区域（画布留空），供用户
         # 排查（F04c）。IndexError 覆盖 texts 为空列表时 TextBlock 取

@@ -179,6 +179,7 @@ class PropertyPanel(QWidget):
     alignment_changed = pyqtSignal(int, str)
     direction_changed = pyqtSignal(int, str)
     style_patch_requested = pyqtSignal(list, dict)
+    fit_font_to_frame_requested = pyqtSignal(list)
     font_family_preview_requested = pyqtSignal(list, str)
     copy_region_requested = pyqtSignal()
     paste_region_requested = pyqtSignal()
@@ -795,6 +796,20 @@ class PropertyPanel(QWidget):
         self.font_size_label = BodyLabel(self._t("Font Size:"))
         style_layout.addRow(self.font_size_label, self.font_size_input)
         style_layout.addRow(CaptionLabel(""), self.font_size_slider)
+        self.frame_font_help = CaptionLabel(
+            "Kéo khung = đổi vị trí/ngắt dòng, không đổi Font Size. "
+            "Viền cam = chữ vượt khung."
+        )
+        self.frame_font_help.setWordWrap(True)
+        style_layout.addRow(self.frame_font_help)
+        # Explicit one-shot fitting. Normal frame drags and font controls are
+        # independent; this is the only button that calculates size from box.
+        self.fit_font_to_frame_button = PushButton("Khớp chữ với khung (1 lần)")
+        self.fit_font_to_frame_button.setToolTip(
+            "Tính cỡ font phù hợp theo khung hiện tại một lần. "
+            "Sau đó Font Size và kích thước khung hoạt động độc lập."
+        )
+        style_layout.addRow(CaptionLabel(""), self.fit_font_to_frame_button)
 
         # Font color
         self.font_color_picker = ColorPickerWidget(
@@ -928,6 +943,11 @@ class PropertyPanel(QWidget):
         )
         self.font_size_input.valueChanged.connect(self._on_font_size_input_changed)
         self.font_size_slider.valueChanged.connect(self._on_font_size_slider_changed)
+        self.fit_font_to_frame_button.clicked.connect(
+            lambda: self.fit_font_to_frame_requested.emit(
+                list(self.model.get_selection() or [])
+            )
+        )
         self.font_color_picker.color_changed.connect(self._on_font_color_changed)
         self.stroke_color_picker.color_changed.connect(self._on_stroke_color_changed)
         self.stroke_width_spinbox.valueChanged.connect(self._on_stroke_width_changed)

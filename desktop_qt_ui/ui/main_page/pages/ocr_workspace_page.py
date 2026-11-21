@@ -6,8 +6,8 @@ import re
 import shutil
 from typing import Any
 
-from PyQt6.QtCore import Qt, QRectF, QUrl, pyqtSignal
-from PyQt6.QtGui import QBrush, QPainter, QPen, QPixmap, QDesktopServices
+from PyQt6.QtCore import Qt, QRectF, QUrl, pyqtSignal, QSignalBlocker, QTimer
+from PyQt6.QtGui import QBrush, QPainter, QPen, QPixmap, QDesktopServices, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QPlainTextEdit,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -30,6 +31,7 @@ from qfluentwidgets import (
     BodyLabel,
     CaptionLabel,
     CardWidget,
+    CheckBox,
     ComboBox,
     PrimaryPushButton,
     PushButton,
@@ -40,6 +42,13 @@ from qfluentwidgets import (
 from manga_translator.image_formats import SUPPORTED_IMAGE_EXTENSIONS
 from manga_translator.utils.path_manager import find_json_path
 from .ocr_project_registry import OCRProjectRegistry, norm_path, within, render_signature, render_config_digest
+from .manual_text import (
+    translation_plain_for_ui,
+    translation_input_to_plain,
+    next_untranslated_region,
+    translated_region_counts,
+)
+from .translation_only_edit import TranslationOnlyEdit
 
 
 def _allowed_image_extensions() -> set[str]:
@@ -160,6 +169,8 @@ class OCRWorkspacePanel(QWidget):
         self.current_regions: list[dict[str, Any]] = []
         self._dirty = False
         self._loading_table = False
+        self._loading_manual_text = False
+        self._committing_manual_text = False
         app_root = getattr(getattr(controller, "config_service", None), "root_dir", None) or os.getcwd()
         self.projects = OCRProjectRegistry(app_root)
         # Preserve existing folders from the old global list on first launch,
@@ -174,6 +185,10 @@ class OCRWorkspacePanel(QWidget):
                         pass
         self._pending_render_signatures: dict[str, str] = {}
         self._pending_render_project: str | None = None
+        self._manual_autosave_timer = QTimer(self)
+        self._manual_autosave_timer.setSingleShot(True)
+        self._manual_autosave_timer.setInterval(1500)
+        self._manual_autosave_timer.timeout.connect(self._autosave_manual_translation)
 
         self._build_ui()
         self._connect_signals()
@@ -249,6 +264,19 @@ class OCRWorkspacePanel(QWidget):
         toolbar_layout.addLayout(project_row)
         toolbar_layout.addLayout(source_row)
         toolbar_layout.addLayout(edit_row)
+        performance_row = QHBoxLayout()
+        self.fast_inpaint_checkbox = CheckBox(
+            "Inpainting nhanh (LaMa ≤1024px, có thể giảm chi tiết nền)"
+        )
+        self.fast_inpaint_checkbox.setChecked(True)
+        self.manual_autosave_checkbox = CheckBox(
+            "Tự lưu bản dịch sau khi ngừng gõ (1,5 giây)"
+        )
+        self.manual_autosave_checkbox.setChecked(True)
+        performance_row.addWidget(self.fast_inpaint_checkbox)
+        performance_row.addStretch(1)
+        performance_row.addWidget(self.manual_autosave_checkbox)
+        toolbar_layout.addLayout(performance_row)
         root.addWidget(toolbar)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -279,6 +307,32 @@ class OCRWorkspacePanel(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.setColumnWidth(0, 46)
         text_layout.addWidget(self.table, 1)
+
+        # OCR Workspace owns the semantic translation only; layout, manual
+        # hard breaks, font and bubble positioning belong exclusively to Editor.
+        # Historical [BR] markers remain in JSON until the user actually
+        # changes that region, but they never appear in this translation UI.
+        quick_row = QHBoxLayout()
+        self.manual_translation_title = BodyLabel("Nội dung bản dịch · Không dàn chữ")
+        self.manual_translation_progress = CaptionLabel("0/0 đã dịch")
+        quick_row.addWidget(self.manual_translation_title)
+        quick_row.addStretch(1)
+        quick_row.addWidget(self.manual_translation_progress)
+        text_layout.addLayout(quick_row)
+        self.manual_translation_edit = TranslationOnlyEdit()
+        self.manual_translation_edit.setPlaceholderText(
+            "Chỉ nhập câu dịch; Enter chuyển vùng thoại tiếp theo. "
+            "Xuống dòng, font và vị trí chữ được chỉnh trong Editor."
+        )
+        self.manual_translation_edit.setFixedHeight(100)
+        text_layout.addWidget(self.manual_translation_edit)
+
+        manual_actions = QHBoxLayout()
+        self.next_untranslated_button = PushButton("Vùng chưa dịch tiếp theo")
+        self.next_region_button = PushButton("Vùng tiếp →")
+        manual_actions.addWidget(self.next_untranslated_button)
+        manual_actions.addWidget(self.next_region_button)
+        text_layout.addLayout(manual_actions)
 
         self.copy_hint = CaptionLabel(
             self._t(
@@ -332,6 +386,27 @@ class OCRWorkspacePanel(QWidget):
         self.page_combo.currentIndexChanged.connect(self._on_page_changed)
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.manual_translation_edit.textChanged.connect(
+            self._on_manual_translation_changed
+        )
+        self.manual_translation_edit.next_region_requested.connect(
+            self._select_next_translation_region
+        )
+        self.next_region_button.clicked.connect(
+            self._select_next_translation_region
+        )
+        self.next_untranslated_button.clicked.connect(
+            self._select_next_untranslated_region
+        )
+        self._save_manual_shortcut = QShortcut(
+            QKeySequence.StandardKey.Save, self
+        )
+        self._save_manual_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        self._save_manual_shortcut.activated.connect(
+            lambda: self.save_current()
+        )
         self.copy_all_button.clicked.connect(self.copy_all_ocr)
         self.copy_selected_button.clicked.connect(self.copy_selected)
         self.paste_batch_button.clicked.connect(self.paste_batch_from_clipboard)
@@ -350,7 +425,11 @@ class OCRWorkspacePanel(QWidget):
             self.scan_button, self.render_batch_button, self.render_current_button,
             self.render_all_button, self.open_editor_button,
             self.project_combo, self.add_folder_button, self.import_subfolders_button,
-            self.remove_project_button, self.add_files_button, self.table, self.save_button,
+            self.remove_project_button, self.add_files_button, self.table,
+            self.manual_translation_edit,
+            self.next_region_button, self.next_untranslated_button,
+            self.save_button, self.fast_inpaint_checkbox,
+            self.manual_autosave_checkbox,
         ):
             widget.setEnabled(not busy)
         self.scan_button.setText(
@@ -590,8 +669,13 @@ class OCRWorkspacePanel(QWidget):
         finally:
             self._loading_table = False
         self.preview.set_image(None)
+        self._manual_autosave_timer.stop()
         self.image_path_label.setText("")
         self.region_count_label.setText("0 regions")
+        self._loading_manual_text = True
+        self.manual_translation_edit.clear()
+        self._loading_manual_text = False
+        self.manual_translation_progress.setText("0/0 đã dịch")
         self._dirty = False
 
     def load_page(self, image_path: str, force: bool = False):
@@ -614,18 +698,14 @@ class OCRWorkspacePanel(QWidget):
         self.current_json_path = json_path if json_path and os.path.isfile(json_path) else None
         self.current_data = None
         self.current_regions = []
-        legacy_br_repaired = 0
-
         if self.current_json_path:
             try:
                 with open(self.current_json_path, "r", encoding="utf-8") as handle:
                     self.current_data = json.load(handle)
                 image_data = self._image_data(self.current_data)
                 if image_data is not None:
-                    from manga_translator.rendering.legacy_break_repair import (
-                        repair_legacy_image_regions,
-                    )
-                    legacy_br_repaired = repair_legacy_image_regions(image_data)
+                    # Do NOT migrate [BR] when merely opening an old project.
+                    # Existing manual typesetting in Editor must remain intact.
                     regions = image_data.get("regions", [])
                     if isinstance(regions, list):
                         self.current_regions = regions
@@ -635,10 +715,8 @@ class OCRWorkspacePanel(QWidget):
                 )
 
         self._populate_table()
-        self._dirty = bool(legacy_br_repaired)
-        self.save_button.setText(
-            self._t("Save JSON") + (" *" if self._dirty else "")
-        )
+        self._dirty = False
+        self.save_button.setText(self._t("Save JSON"))
 
         if self.current_json_path:
             self.status_label.setText(
@@ -670,7 +748,11 @@ class OCRWorkspacePanel(QWidget):
                 number.setFlags(number.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 number.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 original = QTableWidgetItem(str(region.get("text") or ""))
-                translation = QTableWidgetItem(str(region.get("translation") or ""))
+                translation = QTableWidgetItem(
+                    translation_plain_for_ui(
+                        region.get("translation"), region.get("text")
+                    )
+                )
                 self.table.setItem(row, 0, number)
                 self.table.setItem(row, 1, original)
                 self.table.setItem(row, 2, translation)
@@ -678,11 +760,56 @@ class OCRWorkspacePanel(QWidget):
         finally:
             self._loading_table = False
         self.region_count_label.setText(f"{len(self.current_regions)} regions")
+        self._update_manual_progress()
         if self.current_regions:
             self.table.selectRow(0)
             self.preview.highlight_region(self.current_regions[0])
         else:
             self.preview.highlight_region(None)
+        self._on_selection_changed()
+
+    def _update_manual_progress(self):
+        filled, total = translated_region_counts(self.current_regions)
+        self.manual_translation_progress.setText(
+            f"{filled}/{total} đã dịch"
+        )
+
+    def _on_manual_translation_changed(self):
+        if self._loading_manual_text or self._loading_table:
+            return
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self.current_regions):
+            return
+        new = translation_input_to_plain(
+            self.manual_translation_edit.toPlainText()
+        )
+        item = self.table.item(row, 2)
+        if item is not None and item.text() != new:
+            # ItemChanged applies the same data/translation_rich invalidation
+            # path as direct table edits; no duplicate writeback.
+            # Do not reset the editor while a user is typing; QTextEdit would
+            # move the cursor to the beginning and lose undo context.
+            self._committing_manual_text = True
+            try:
+                item.setText(new)
+            finally:
+                self._committing_manual_text = False
+
+    def _select_next_translation_region(self):
+        if not self.current_regions:
+            return
+        self.table.selectRow((self.table.currentRow() + 1) % len(self.current_regions))
+        self.manual_translation_edit.setFocus()
+
+    def _select_next_untranslated_region(self):
+        row = next_untranslated_region(
+            self.current_regions, self.table.currentRow()
+        )
+        if row is not None:
+            self.table.selectRow(row)
+            self.manual_translation_edit.setFocus()
+        else:
+            self.status_label.setText("Đã có bản dịch cho tất cả vùng OCR.")
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._loading_table or item.column() == 0:
@@ -703,22 +830,72 @@ class OCRWorkspacePanel(QWidget):
                 region["texts"] = [item.text()]
         elif item.column() == 2:
             old = str(region.get("translation") or "")
-            new = item.text()
+            new = translation_input_to_plain(item.text())
+            if item.text() != new:
+                # Normalize direct table edits and pasted hard breaks. This
+                # does not fire on loading an old JSON file.
+                with QSignalBlocker(self.table):
+                    item.setText(new)
             region["translation"] = new
             region["translation_raw"] = new
             if old != new:
+                # A genuinely edited translation no longer necessarily fits
+                # the previous Editor paragraph-by-paragraph rich document.
                 region.pop("translation_rich", None)
         self._dirty = True
         self.save_button.setText(self._t("Save JSON") + " *")
+        self._schedule_manual_autosave()
+        self._update_manual_progress()
+        if (
+            item.column() == 2
+            and item.row() == self.table.currentRow()
+            and not self._committing_manual_text
+        ):
+            self._sync_selected_translation()
+
+    def _sync_selected_translation(self):
+        row = self.table.currentRow()
+        region = (
+            self.current_regions[row]
+            if 0 <= row < len(self.current_regions)
+            else None
+        )
+        text = (
+            translation_plain_for_ui(
+                region.get("translation"), region.get("text")
+            )
+            if region is not None
+            else ""
+        )
+        with QSignalBlocker(self.manual_translation_edit):
+            self.manual_translation_edit.setPlainText(text)
+        self.manual_translation_edit.setEnabled(bool(self.current_regions))
+
+    def _schedule_manual_autosave(self):
+        if self.manual_autosave_checkbox.isChecked() and self.current_json_path:
+            self._manual_autosave_timer.start()
+
+    def _autosave_manual_translation(self):
+        if (
+            self._dirty and self.current_json_path
+            and self.manual_autosave_checkbox.isChecked()
+            and not self.controller.state_manager.is_translating()
+        ):
+            if not self.save_current(silent=True):
+                self.status_label.setText(
+                    "Không tự lưu được JSON; hãy dùng Save JSON để xem lỗi."
+                )
 
     def _on_selection_changed(self):
         rows = self.table.selectionModel().selectedRows()
         if not rows:
             self.preview.highlight_region(None)
+            self._sync_selected_translation()
             return
         row = rows[0].row()
         region = self.current_regions[row] if 0 <= row < len(self.current_regions) else None
         self.preview.highlight_region(region)
+        self._sync_selected_translation()
 
     def copy_all_ocr(self):
         if not self.current_regions:
@@ -818,6 +995,7 @@ class OCRWorkspacePanel(QWidget):
             if isinstance(parsed, dict):
                 for row, translation in parsed.items():
                     if 0 <= row < len(self.current_regions):
+                        translation = translation_input_to_plain(translation)
                         self.current_regions[row]["translation"] = translation
                         self.current_regions[row]["translation_raw"] = translation
                         self.current_regions[row].pop("translation_rich", None)
@@ -827,6 +1005,7 @@ class OCRWorkspacePanel(QWidget):
                         applied += 1
             else:
                 for row, translation in enumerate(parsed[: len(self.current_regions)]):
+                    translation = translation_input_to_plain(translation)
                     self.current_regions[row]["translation"] = translation
                     self.current_regions[row]["translation_raw"] = translation
                     self.current_regions[row].pop("translation_rich", None)
@@ -840,6 +1019,9 @@ class OCRWorkspacePanel(QWidget):
         if applied:
             self._dirty = True
             self.save_button.setText(self._t("Save JSON") + " *")
+            self._schedule_manual_autosave()
+            self._update_manual_progress()
+            self._sync_selected_translation()
         self.status_label.setText(
             self._t("Pasted {count} translations from clipboard.", count=applied)
         )
@@ -875,6 +1057,7 @@ class OCRWorkspacePanel(QWidget):
                 json.dump(self.current_data, handle, ensure_ascii=False, indent=4)
             os.replace(tmp_path, self.current_json_path)
             self._dirty = False
+            self._manual_autosave_timer.stop()
             self.save_button.setText(self._t("Save JSON"))
             self.status_label.setText(self._t("Project JSON saved."))
             return True
@@ -915,6 +1098,11 @@ class OCRWorkspacePanel(QWidget):
             QMessageBox.information(self, "OCR Workspace", "Hãy chọn dự án trước.")
             return
         settings = self.controller.config_service.get_config().model_dump()
+        if self.fast_inpaint_checkbox.isChecked():
+            inpainter_settings = settings.setdefault("inpainter", {})
+            inpainter_settings["inpainting_size"] = min(
+                int(inpainter_settings.get("inpainting_size") or 2048), 1024
+            )
         config_digest = render_config_digest(settings)
         cache = self.projects.read_cache(folder)
         images = [self.current_image_path] if only_current else self.image_paths
@@ -957,7 +1145,8 @@ class OCRWorkspacePanel(QWidget):
             f"bỏ qua {skipped} trang không đổi."
         )
         self.controller.start_ocr_workspace_render(
-            project_images=candidates, project_root=folder
+            project_images=candidates, project_root=folder,
+            fast_inpaint=self.fast_inpaint_checkbox.isChecked(),
         )
 
     def export_batch_txt(self):
@@ -994,7 +1183,9 @@ class OCRWorkspacePanel(QWidget):
                 chunks.append(f"=== PAGE {page_number:03d}: {os.path.basename(image_path)} ===")
                 for index, region in enumerate(regions, start=1):
                     original = str(region.get("text") or "").replace("\n", " ").strip()
-                    translation = str(region.get("translation") or "").replace("\n", " ").strip()
+                    translation = translation_plain_for_ui(
+                        region.get("translation"), region.get("text")
+                    )
                     chunks.append(f"[{index:03d}] {original}")
                     chunks.append(f"=> {translation}")
                     regions_written += 1

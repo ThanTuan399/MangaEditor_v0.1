@@ -1172,16 +1172,55 @@ class MangaTranslator:
         self,
         image_path: str,
         inpainted_img: np.ndarray,
+        cache_signature: Optional[str] = None,
     ) -> Optional[str]:
         if inpainted_img is None:
             return None
         inpainted_path = get_inpainted_path(image_path, create_dir=True)
-        return self._save_image_to_path(
+        saved_path = self._save_image_to_path(
             inpainted_path,
             inpainted_img,
             "Inpainted image",
             source_image_path=image_path,
         )
+        if saved_path and cache_signature:
+            try:
+                from .inpainting.workspace_cache import write_workspace_inpaint_cache
+
+                write_workspace_inpaint_cache(saved_path, cache_signature)
+            except (OSError, ValueError) as exc:
+                logger.warning("Could not record manual inpainting cache: %s", exc)
+        return saved_path
+
+    def _verified_manual_workspace_inpaint_path(
+        self, config, ctx, image_name, existing_inpainted_path,
+    ) -> Optional[str]:
+        """Validate cached LaMa background against image, effective mask and settings."""
+        if not self.ocr_workspace_render:
+            return existing_inpainted_path
+        if not image_name or getattr(ctx, "mask", None) is None:
+            return None
+        try:
+            from .inpainting.workspace_cache import (
+                workspace_inpaint_signature,
+                is_valid_workspace_inpaint_cache,
+            )
+            signature = workspace_inpaint_signature(
+                image_name, ctx.mask, config, self.device,
+                getattr(ctx, "text_regions", None),
+            )
+            ctx.manual_inpaint_cache_signature = signature
+            if is_valid_workspace_inpaint_cache(existing_inpainted_path, signature):
+                logger.info("[Manual Edition] Reusing LaMa background; only text changed")
+                return existing_inpainted_path
+            logger.info(
+                "[Manual Edition] Source image, mask or inpainting settings changed "
+                "(or legacy cache unverified): computing fresh LaMa background"
+            )
+            return None
+        except (OSError, ValueError, TypeError) as exc:
+            logger.warning("Manual inpaint cache verification unavailable: %s", exc)
+            return None
 
     def _save_work_image(self, image_path: str, image_data, label: str = "Work image") -> Optional[str]:
         """保存编辑器专用的上色/超分底图到 editor_base 目录。"""
@@ -1601,6 +1640,20 @@ class MangaTranslator:
             repaired_count = repair_legacy_image_regions(image_data)
             if repaired_count:
                 logger.info("Repaired legacy automatic BR errors in %d regions of %s", repaired_count, text_file_path)
+
+            # Some older chapters have already had [BR] replaced with literal
+            # spaces, and others have plain rich paragraphs that retain the
+            # original broken syllables. Repair only high-confidence splits
+            # in-memory before the render engine constructs TextBlocks.
+            from .rendering.legacy_word_recovery import repair_editor_region_list
+
+            split_count = repair_editor_region_list(regions_data)
+            if split_count:
+                logger.info(
+                    "Recovered legacy broken Vietnamese syllables in %d regions "
+                    "of %s before rendering",
+                    split_count, text_file_path,
+                )
 
         regions = []
         parse_failure_count = 0
@@ -4060,6 +4113,9 @@ class MangaTranslator:
                                     mask_injected_from_raw = ctx.mask is None
                                     if ctx.mask is None:
                                         ctx.mask = np.asarray(mask_for_inpainting, dtype=np.uint8)
+                                    existing_inpainted_path = self._verified_manual_workspace_inpaint_path(
+                                        config, ctx, image_name, existing_inpainted_path
+                                    )
 
                                     generated_inpainted_in_load_text = False
                                     if preloaded_inpainted is not None:
@@ -4104,6 +4160,9 @@ class MangaTranslator:
                                         self._save_inpainted_image(
                                             image_name,
                                             ctx.img_inpainted,
+                                            cache_signature=getattr(
+                                                ctx, "manual_inpaint_cache_signature", None
+                                            ) if self.ocr_workspace_render else None,
                                         )
 
                                     # 画笔/印章层合成（放在保存 inpainted 之后，避免涂层被烤进修复图文件）
@@ -4129,7 +4188,10 @@ class MangaTranslator:
                                 if ctx.mask is None:
                                     await self._report_progress('mask-generation')
                                     ctx.mask = await self._run_mask_refinement(config, ctx)
-                                
+                                existing_inpainted_path = self._verified_manual_workspace_inpaint_path(
+                                    config, ctx, image_name, existing_inpainted_path
+                                )
+
                                 # Inpainting
                                 generated_inpainted_in_load_text = False
                                 if editor_export_kind == 'source':
@@ -4183,6 +4245,9 @@ class MangaTranslator:
                                     self._save_inpainted_image(
                                         image_name,
                                         ctx.img_inpainted,
+                                        cache_signature=getattr(
+                                            ctx, "manual_inpaint_cache_signature", None
+                                        ) if self.ocr_workspace_render else None,
                                     )
 
                                 # 画笔/印章层合成（放在保存 inpainted 之后，避免涂层被烤进修复图文件）
