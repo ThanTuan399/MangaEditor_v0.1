@@ -40,3 +40,59 @@ def translated_region_counts(regions: list[dict]) -> tuple[int, int]:
         sum(bool(str(region.get("translation") or "").strip()) for region in regions),
         len(regions),
     )
+
+
+
+_WORD = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def translation_plain_for_ui(
+    translation: str | None, original_ocr: str | None = None
+) -> str:
+    """Return readable prose without any stored typesetting line breaks.
+
+    This is a *view* of historical JSON: opening an OCR project never modifies
+    its saved manual [BR] layout or rich text. The prior renderer could split a
+    single word across [BR]. Rejoin only a very short fragment (one letter) or
+    two fragments whose joined spelling occurs as a word in the original OCR
+    (e.g. Ya[BR]mamoto with YAMAMOTO in the source). Otherwise use a space:
+    do not silently turn intentional separate words into one word.
+    """
+    source_words = {
+        word.casefold()
+        for word in _WORD.findall(str(original_ocr or ""))
+    }
+    parts = _BREAK.split(str(translation or "").replace("\r\n", "\n").replace("\r", "\n"))
+    merged = ""
+    for fragment in parts:
+        fragment = " ".join(fragment.split())
+        if not fragment:
+            continue
+        if not merged:
+            merged = fragment
+            continue
+        previous = _WORD.findall(merged)
+        following = _WORD.match(fragment)
+        prev_word = previous[-1] if previous and merged.endswith(previous[-1]) else ""
+        next_word = following.group(0) if following else ""
+        joined = prev_word + next_word
+        should_join = (
+            bool(prev_word and next_word)
+            and (
+                len(prev_word) == 1
+                or (bool(source_words) and joined.casefold() in source_words)
+            )
+        )
+        merged += ("" if should_join else " ") + fragment
+    return " ".join(merged.split())
+
+
+def translation_input_to_plain(value: str | None) -> str:
+    """Normalize pasted/typed OCR translation as prose, never as typesetting.
+
+    Even pressing Enter or pasting [BR] in OCR Workspace is not a request to
+    alter image layout; manual hard breaks belong exclusively to the Editor.
+    """
+    return " ".join(
+        _BREAK.sub(" ", str(value or "").replace("\r\n", "\n").replace("\r", "\n")).split()
+    )
