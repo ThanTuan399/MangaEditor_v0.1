@@ -1641,6 +1641,20 @@ class MangaTranslator:
             if repaired_count:
                 logger.info("Repaired legacy automatic BR errors in %d regions of %s", repaired_count, text_file_path)
 
+            # Some older chapters have already had [BR] replaced with literal
+            # spaces, and others have plain rich paragraphs that retain the
+            # original broken syllables. Repair only high-confidence splits
+            # in-memory before the render engine constructs TextBlocks.
+            from .rendering.legacy_word_recovery import repair_editor_region_list
+
+            split_count = repair_editor_region_list(regions_data)
+            if split_count:
+                logger.info(
+                    "Recovered legacy broken Vietnamese syllables in %d regions "
+                    "of %s before rendering",
+                    split_count, text_file_path,
+                )
+
         regions = []
         parse_failure_count = 0
         for region_data in regions_data:
