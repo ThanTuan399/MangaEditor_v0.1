@@ -796,11 +796,18 @@ class PropertyPanel(QWidget):
         self.font_size_label = BodyLabel(self._t("Font Size:"))
         style_layout.addRow(self.font_size_label, self.font_size_input)
         style_layout.addRow(CaptionLabel(""), self.font_size_slider)
+        self.frame_font_help = CaptionLabel(
+            "Kéo khung = đổi vị trí/ngắt dòng, không đổi Font Size. "
+            "Viền cam = chữ vượt khung."
+        )
+        self.frame_font_help.setWordWrap(True)
+        style_layout.addRow(self.frame_font_help)
         # Explicit one-shot fitting. Normal frame drags and font controls are
         # independent; this is the only button that calculates size from box.
         self.fit_font_to_frame_button = PushButton("Khớp chữ với khung (1 lần)")
         self.fit_font_to_frame_button.setToolTip(
-            "Chỉ tính lại cỡ chữ một lần theo khung hiện tại. Kéo khung sau đó không đổi font."
+            "Tính cỡ font phù hợp theo khung hiện tại một lần. "
+            "Sau đó Font Size và kích thước khung hoạt động độc lập."
         )
         style_layout.addRow(CaptionLabel(""), self.fit_font_to_frame_button)
 
