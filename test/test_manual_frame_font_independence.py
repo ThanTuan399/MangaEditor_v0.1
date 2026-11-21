@@ -188,3 +188,98 @@ def test_render_reflow_is_idempotent_when_preview_redraws():
     assert not wrap_textblock_for_manual_frame(block, measure_width=metrics)
     assert block.translation == once
     assert block.font_size == 31
+
+
+
+def test_legacy_auto_fit_mode_never_changes_font_while_resizing():
+    region = _region(font_fit_mode="auto", font_size=38)
+    new_data = build_white_frame_region_data(
+        0,
+        region,
+        {"white_frame_rect_local": [-60, -36, 60, 36], "has_custom_white_frame": True},
+        [-60, -36, 60, 36],
+        old_white_frame_local=[-35, -35, 35, 35],
+        edit_mode="white_corner",
+    )
+    assert new_data["font_size"] == 38
+    assert new_data["white_frame_rect_local"] == [-60, -36, 60, 36]
+    assert new_data["font_fit_mode"] == "fixed"
+
+
+def test_legacy_auto_fit_mode_never_changes_box_on_font_update():
+    old = _region(font_fit_mode="auto", font_size=20)
+    updated = {**deepcopy(old), "font_size": 54}
+    _sync_white_frame_size_for_font_change(
+        updated, old, None, None
+    )
+    assert updated["font_size"] == 54
+    assert updated["white_frame_rect_local"] == old["white_frame_rect_local"]
+
+
+def test_drag_geometry_does_not_overwrite_newer_font_or_text():
+    from editor.typography_frame_policy import merge_geometry_without_stale_typography
+
+    current = _region(font_size=47, translation="Bản dịch đã sửa")
+    stale_item = _region(
+        font_size=18, translation="Bản dịch cũ",
+        white_frame_rect_local=[-55, -55, 55, 55],
+    )
+    result = merge_geometry_without_stale_typography(current, stale_item)
+    assert result["font_size"] == 47
+    assert result["translation"] == "Bản dịch đã sửa"
+    assert result["white_frame_rect_local"] == [-55, -55, 55, 55]
+    assert result["font_fit_mode"] == "fixed"
+    assert result["has_custom_white_frame"] is True
+    assert current["font_size"] == 47
+
+
+def test_sizing_a_rich_bubble_scales_absolute_inline_fonts_not_frame():
+    from editor.typography_frame_policy import scale_rich_absolute_font_sizes
+
+    doc = legacy_line_breaks_to_document("Chào các bạn").to_dict()
+    inline = doc["blocks"][0]["inlines"][0]
+    inline["style"]["fontSize"] = 16.0
+    inline["style"]["bold"] = True
+    copy_before = deepcopy(doc)
+
+    scaled = scale_rich_absolute_font_sizes(doc, 24, 36)
+    assert scaled["blocks"][0]["inlines"][0]["style"]["fontSize"] == 24.0
+    assert scaled["blocks"][0]["inlines"][0]["style"]["bold"] is True
+    assert doc == copy_before
+    assert scale_rich_absolute_font_sizes(doc, 0, 34) is doc
+    assert scale_rich_absolute_font_sizes(None, 24, 34) is None
+
+
+def test_dialogue_overflow_indicator_uses_ink_extent_not_font_scaling():
+    import numpy as np
+    from editor.typography_frame_policy import content_overflows_manual_frame
+
+    bounds = [-40, -40, 40, 40]
+    contained = np.array(
+        [[[-32, -24], [32, -24], [32, 24], [-32, 24]]], dtype=float
+    )
+    oversize = np.array(
+        [[[-44, -24], [44, -24], [44, 24], [-44, 24]]], dtype=float
+    )
+    assert not content_overflows_manual_frame(bounds, contained)
+    assert content_overflows_manual_frame(bounds, oversize)
+    assert not content_overflows_manual_frame(None, oversize)
+    assert not content_overflows_manual_frame(bounds, None)
+
+
+def test_larger_frame_changes_only_word_wrap_not_font_size():
+    from editor.text_render_pipeline import build_text_block_from_region
+
+    old = _region(translation="Đúng rồi đó!", font_size=24)
+    narrow = {**deepcopy(old), "white_frame_rect_local": [-25, -35, 25, 35]}
+    wide = {**deepcopy(old), "white_frame_rect_local": [-120, -35, 120, 35]}
+    # Real renderer font metrics determine how many words fit; neither box
+    # width is allowed to trigger implicit font scaling.
+    narrow_block = build_text_block_from_region(narrow)
+    wide_block = build_text_block_from_region(wide)
+    assert narrow_block is not None and wide_block is not None
+    assert narrow_block.font_size == 24
+    assert wide_block.font_size == 24
+    assert narrow_block.manual_frame_width == 50
+    assert wide_block.manual_frame_width == 240
+    assert narrow_block.translation.count("[BR]") >= wide_block.translation.count("[BR]")
