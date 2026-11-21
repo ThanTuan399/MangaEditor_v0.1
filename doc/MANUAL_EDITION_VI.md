@@ -80,3 +80,17 @@ Remove-Item Env:MANGA_EDITOR_UI -ErrorAction SilentlyContinue
 - Khi có thể, giao diện ghép những mảnh từ bị chia bởi `[BR]`, ví dụ `Ya[BR]mamoto` nếu trong OCR gốc có chữ `YAMAMOTO`; các ranh giới từ không chắc sẽ dùng dấu cách để tránh gộp sai.
 - Bảng **Translation**, ô nhập và Export Batch TXT hiển thị/nội dung văn bản thuần, không dùng lệnh định dạng.
 - Thay đổi nội dung dịch một vùng đồng nghĩa tạo bản dịch mới cho vùng đó: chỉ khi đó các ngắt dòng/định dạng Rich Text cũ không còn hợp lệ; nên lưu JSON dự phòng trước khi sửa.
+
+
+## Sửa lỗi còn khoảng trắng sau khi xóa [BR] ở dự án cũ
+
+Một số chương trước đây đã bị thuật toán tự ngắt dòng ghi ngược vào JSON. Chỉ ẩn mã \`[BR]\` có thể làm các từ như \`xon[BR]g\`, \`ch[BR]ị\` trở thành \`xon g\`, \`ch ị\`; đồng thời \`translation_rich\` cũ có thể còn chứa các đoạn \`hu[BR]ấn\`, \`ch[BR]o\`.
+
+Bản sửa mới có hai tầng:
+
+1. **OCR Workspace:** khi hiển thị, tái ghép những mảnh chữ có bằng chứng đủ rõ (ví dụ \`xon g\` → \`xong\`, \`ch ị\` → \`chị\`, \`Ya[BR]mamoto\` → \`Yamamoto\` khi OCR gốc chứa \`YAMAMOTO\`). Việc chỉ mở trang **không tự ghi lại JSON**.
+2. **Editor và Render Current/All:** khi đọc dữ liệu cũ, phục hồi những từ bị cắt chắc chắn (bao gồm \`hu[BR]ấn\`, \`ch[BR]o\`) từ \`translation\` và **chỉ hủy các đoạn Rich Text cũ nếu chúng không chứa kiểu chữ riêng** và khớp nguyên văn. Ngắt dòng có chủ ý giữa các từ hoàn chỉnh (ví dụ \`Đúng rồi[BR]đó!\`) được giữ.
+
+**Làm thế nào kiểm tra:** Sao lưu JSON; đóng ứng dụng; cập nhật nhánh và mở lại dự án. Đầu tiên kiểm tra cột Translation, sau đó **Mở/tiếp tục chỉnh sửa** trong Editor từ ảnh nguồn. Kiểm tra bố cục câu và xuất lại ảnh lỗi. Lưu Editor State/JSON nếu kết quả đúng. Ảnh cũ đã xuất không tự sửa.
+
+**Giới hạn:** Khi một người đã thay \`[BR]\` bằng dấu cách rồi lưu, không có cách nào biết chính xác tất cả ranh giới từ đã mất. Bản sửa chỉ tự nối các trường hợp chắc chắn, tránh tự gộp sai câu khác. Vùng có Rich Text tùy chỉnh sẽ không bị xóa kiểu chữ một cách tự động; nếu vùng đó vẫn lỗi, cần kiểm tra và đặt lại ngắt dòng thủ công trong Editor.
