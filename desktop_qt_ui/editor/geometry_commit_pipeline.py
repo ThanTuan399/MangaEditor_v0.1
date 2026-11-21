@@ -37,7 +37,11 @@ def build_white_frame_region_data(
     data = copy.deepcopy(region_data)
     data.update(white_patch)
 
-    if edit_mode == "white_move":
+    # Manual Edition: the frame is an independent *layout constraint*.
+    # Dragging its corners must not overwrite the font size chosen by the user.
+    # Explicit fitting remains available through the inspector's one-shot
+    # "Fit text to frame" command, not through every geometry mouse release.
+    if edit_mode == "white_move" or not data.get("font_fit_mode") == "auto":
         return data
 
     if not _white_frame_size_changed(old_white_frame_local, white_frame_local):
