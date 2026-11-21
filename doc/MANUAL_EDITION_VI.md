@@ -17,7 +17,7 @@ Các dịch vụ dịch AI, Prompt Manager và màn hình API được **ẩn kh
 - Mở app → **OCR Workspace** (mặc định).
 - **Thêm thư mục dự án** và **Scan OCR Only** nếu chương chưa được quét OCR.
 - Chọn một hàng trong bảng OCR; nội dung gốc được tô sáng trên preview.
-- Nhập văn bản thuần vào ô **Nội dung bản dịch · Không dàn chữ**. Cột **Translation** và ô nhập không hiển thị mã `[BR]` trong file cũ; ngắt dòng, font và vị trí chữ chỉ được chỉnh trong **Editor**.
+- Nhập văn bản thuần vào ô **Nội dung bản dịch · Không dàn chữ**. Cột **Translation** và ô nhập không hiển thị mã `[BR]` trong file cũ; **Enter chuyển vùng thoại tiếp theo**, còn khi dán nhiều dòng, hệ thống tự ghép thành câu văn. Ngắt dòng, font và vị trí chữ chỉ được chỉnh trong **Editor**.
 - Dùng **Vùng tiếp →**, **Vùng chưa dịch tiếp theo** để di chuyển nhanh; tiến độ **đã dịch/tổng vùng** hiển thị bên cạnh. Nút **↵ Xuống dòng** không còn ở OCR Workspace.
 - **Tự lưu (mặc định bật):** sau 1,5 giây không gõ, ứng dụng tự lưu JSON và giữ bản sao `.ocr_workspace.bak`. Có thể tắt bằng ô **Tự lưu bản dịch**. **Ctrl+S** hoặc **Save JSON** vẫn lưu tức thì. Dùng Copy All OCR/Paste Batch nếu muốn dịch hàng loạt theo ID.
 - **Render trang đang chọn** để xem kết quả; **Render trang đã đổi** cho chương; mở **Editor** để điều chỉnh font, lớp mask, Paint, Clone và xuất ảnh.
