@@ -133,6 +133,19 @@ class TextBlock(object):
         self._direction = direction
         # Explicit user direction survives OCR-derived vertical-layout migration.
         self.direction_user_override = bool(kwargs.get('direction_user_override', False))
+        # A user-drawn Editor frame constrains *line wrapping* only.
+        # Its width is independent of the requested font size and is not
+        # serialized into translation content.
+        self.manual_frame_width = None
+        if bool(kwargs.get('has_custom_white_frame', False)):
+            rect = kwargs.get('white_frame_rect_local')
+            if isinstance(rect, (list, tuple)) and len(rect) == 4:
+                try:
+                    width = float(rect[2]) - float(rect[0])
+                    if width > 0:
+                        self.manual_frame_width = width
+                except (ValueError, TypeError):
+                    pass
 
         self.texts = texts if texts is not None else []
         self.text = texts[0]
