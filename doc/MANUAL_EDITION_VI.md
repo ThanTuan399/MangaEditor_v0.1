@@ -110,3 +110,18 @@ Trong Editor, **khung xanh là diện tích bố trí chữ**, không phải tha
 **Để kiểm tra:** Mở trang có bóng thoại hẹp, ghi nhớ Font Size (ví dụ 21), kéo cạnh phải của khung và xác nhận **Font Size vẫn là 21**. Thu lại khung để chữ tự chuyển dòng nhưng không bị chẻ giữa một từ; tăng cỡ chữ thành 25 và xác nhận khung không tự đổi chiều rộng. Save, mở lại Editor và thử Export. Ảnh đã export trước đây không được sửa tự động.
 
 Bản vá giữ nguyên cơ chế cũ \`font_fit_mode=auto\` cho những cấu hình bật rõ ràng; mặc định trên **Manual Edition** là font cố định, một lần khớp cỡ là hành động riêng.
+
+
+## Khung thoại và Font Size hoạt động độc lập
+
+Trong Editor, chọn vùng thoại rồi chỉnh trong **Property Editor → Style Settings**:
+
+- **Kéo các nút xanh của khung:** chỉnh chiều rộng, chiều cao và vị trí đặt chữ. Chương trình chỉ dàn lại những từ thành dòng trong khoảng rộng mới. **Không làm thay đổi Font Size**.
+- **Font Size / thanh trượt:** thay đổi kích cỡ chữ nhưng **không co giãn khung**. Nếu Rich Text có các cỡ chữ tuyệt đối khác nhau, chúng thay đổi theo cùng tỷ lệ, giữ các định dạng còn lại.
+- **Khớp chữ với khung (1 lần):** lệnh *tùy chọn*, tính cỡ chữ phù hợp với khung đang có. Lệnh này không bật lại chế độ tự đổi font mỗi khi bạn kéo.
+- **Viền khung màu cam:** báo hiệu chữ vượt phạm vi khung sau khi dàn theo từ. Hãy tự quyết định tăng chiều rộng/chiều cao hoặc giảm Font Size. Phần mềm sẽ không cố chia vụn từng từ Việt hay âm thầm thu nhỏ font để làm vừa.
+- **Nhấn Enter trong Rich Text nổi:** chèn ngắt dòng cứng. Những ngắt dòng tự động do khung chỉ dùng để vẽ, không được ghi vào Translation JSON.
+
+**Tương thích:** Nếu JSON cũ mang \`font_fit_mode: auto\`, từ bản này khi bạn kéo/chỉnh khung hoặc chọn cỡ chữ, vùng đó chuyển sang chế độ **fixed**. Phần mềm cũng không lấy font/câu dịch cũ từ đối tượng canvas để ghi đè dữ liệu mới sau thao tác kéo khung. Các thay đổi vẫn có Undo và được lưu khi bạn Save Editor State/JSON.
+
+**Lưu ý:** Với những vùng dùng định dạng Rich Text phức tạp (ruby, nhiều kiểu ký tự), việc tự ngắt dòng có thể bị giới hạn để tránh làm mất định dạng. Khi chữ vượt khung, viền cam giúp bạn nhận ra thay vì xuất ảnh lỗi mà không báo.
