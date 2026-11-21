@@ -48,6 +48,7 @@ from .manual_text import (
     next_untranslated_region,
     translated_region_counts,
 )
+from .translation_only_edit import TranslationOnlyEdit
 
 
 def _allowed_image_extensions() -> set[str]:
@@ -318,10 +319,10 @@ class OCRWorkspacePanel(QWidget):
         quick_row.addStretch(1)
         quick_row.addWidget(self.manual_translation_progress)
         text_layout.addLayout(quick_row)
-        self.manual_translation_edit = QPlainTextEdit()
+        self.manual_translation_edit = TranslationOnlyEdit()
         self.manual_translation_edit.setPlaceholderText(
-            "Chỉ nhập nội dung bản dịch. Xuống dòng, font và vị trí chữ: mở Editor. "
-            "Enter hoặc dán [BR] ở đây không tạo định dạng dàn chữ."
+            "Chỉ nhập câu dịch; Enter chuyển vùng thoại tiếp theo. "
+            "Xuống dòng, font và vị trí chữ được chỉnh trong Editor."
         )
         self.manual_translation_edit.setFixedHeight(100)
         text_layout.addWidget(self.manual_translation_edit)
@@ -387,6 +388,9 @@ class OCRWorkspacePanel(QWidget):
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.manual_translation_edit.textChanged.connect(
             self._on_manual_translation_changed
+        )
+        self.manual_translation_edit.next_region_requested.connect(
+            self._select_next_translation_region
         )
         self.next_region_button.clicked.connect(
             self._select_next_translation_region
