@@ -94,3 +94,19 @@ Bản sửa mới có hai tầng:
 **Làm thế nào kiểm tra:** Sao lưu JSON; đóng ứng dụng; cập nhật nhánh và mở lại dự án. Đầu tiên kiểm tra cột Translation, sau đó **Mở/tiếp tục chỉnh sửa** trong Editor từ ảnh nguồn. Kiểm tra bố cục câu và xuất lại ảnh lỗi. Lưu Editor State/JSON nếu kết quả đúng. Ảnh cũ đã xuất không tự sửa.
 
 **Giới hạn:** Khi một người đã thay \`[BR]\` bằng dấu cách rồi lưu, không có cách nào biết chính xác tất cả ranh giới từ đã mất. Bản sửa chỉ tự nối các trường hợp chắc chắn, tránh tự gộp sai câu khác. Vùng có Rich Text tùy chỉnh sẽ không bị xóa kiểu chữ một cách tự động; nếu vùng đó vẫn lỗi, cần kiểm tra và đặt lại ngắt dòng thủ công trong Editor.
+
+
+## Khung chữ và cỡ chữ độc lập (bản sửa theo video 21/11/2026)
+
+Trong Editor, **khung xanh là diện tích bố trí chữ**, không phải thanh điều chỉnh kích cỡ font:
+
+- **Kéo góc/cạnh khung:** đổi kích thước và vị trí bố cục, **không đổi \`font_size\`** đã chọn.
+- **Property Editor → Style Settings → Font Size**, hoặc Font/Size ở Rich Text nổi: thay đổi kích cỡ chữ, **không tự thu/phóng khung** đã căn theo bóng thoại.
+- **Độ rộng khung:** chữ ngang dạng văn bản thường tự xuống dòng tại **khoảng trắng giữa từ** theo kích thước font cố định, không tự chèn \`[BR]\` vào JSON. Từ dài hơn cả khung không bị xé thành ký tự; hãy giảm cỡ font hoặc chỉnh câu/dòng thủ công.
+- **Khớp chữ với khung (1 lần):** nút mới trong **Style Settings**, chủ động ước tính cỡ font lớn nhất vừa chiều ngang và chiều cao khung. Sau đó bạn vẫn có thể kéo khung hoặc chỉnh font mà hai thao tác không ghi đè nhau.
+- **Rich Text có kiểu chữ riêng cho từng ký tự:** giữ nguyên bố cục/định dạng của bạn, không tự làm phẳng style để ép wrap. Đặt lại dòng trong Rich Text nổi nếu font cục bộ không khớp.
+- Preview và **Export Image** sử dụng cùng thuật toán wrap cho vùng văn bản không có style cục bộ. \`white_frame_rect_local\` và \`has_custom_white_frame\` cũng được lưu cùng trang, tránh mất kích thước khung sau khi xuất/mở lại.
+
+**Để kiểm tra:** Mở trang có bóng thoại hẹp, ghi nhớ Font Size (ví dụ 21), kéo cạnh phải của khung và xác nhận **Font Size vẫn là 21**. Thu lại khung để chữ tự chuyển dòng nhưng không bị chẻ giữa một từ; tăng cỡ chữ thành 25 và xác nhận khung không tự đổi chiều rộng. Save, mở lại Editor và thử Export. Ảnh đã export trước đây không được sửa tự động.
+
+Bản vá giữ nguyên cơ chế cũ \`font_fit_mode=auto\` cho những cấu hình bật rõ ràng; mặc định trên **Manual Edition** là font cố định, một lần khớp cỡ là hành động riêng.
