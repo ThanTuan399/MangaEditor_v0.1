@@ -1293,6 +1293,32 @@ class EditorController(QObject):
             description=f"Update Direction to {direction_value}",
         )
 
+    @pyqtSlot(list)
+    def fit_font_to_frame_once(self, region_indices: list) -> None:
+        """Only explicit UI command may derive font size from frame geometry."""
+        from .geometry_commit_pipeline import fit_font_once_to_frame
+
+        for raw_index in region_indices or []:
+            try:
+                index = int(raw_index)
+            except (ValueError, TypeError):
+                continue
+            region = self.model.get_region_by_index(index)
+            if not region:
+                continue
+            region = self._merge_live_geometry_state(index, region)
+            geo = RegionGeometryState.from_region_data(region)
+            size = fit_font_once_to_frame(
+                region, geo.white_frame_local,
+                self._resolve_region_render_params(index, region),
+            )
+            if size is not None:
+                self._update_region_field(
+                    index, "font_size", int(size),
+                    description=f"Fit Text to Frame Region {index}",
+                    merge_key=f"region:{index}:fit_font_once",
+                )
+
     @pyqtSlot(list, dict)
     def update_region_style_patch(self, region_indices: list, patch: dict) -> None:
         """Apply one style patch to a selection as one undo command/model notification."""
