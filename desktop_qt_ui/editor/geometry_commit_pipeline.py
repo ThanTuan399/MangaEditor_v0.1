@@ -37,23 +37,11 @@ def build_white_frame_region_data(
     data = copy.deepcopy(region_data)
     data.update(white_patch)
 
-    # Manual Edition: the frame is an independent *layout constraint*.
-    # Dragging its corners must not overwrite the font size chosen by the user.
-    # Explicit fitting remains available through the inspector's one-shot
-    # "Fit text to frame" command, not through every geometry mouse release.
-    if edit_mode == "white_move" or not data.get("font_fit_mode") == "auto":
-        return data
-
-    if not _white_frame_size_changed(old_white_frame_local, white_frame_local):
-        return data
-
-    service = get_render_parameter_service()
-    if service is None:
-        raise RuntimeError("RenderParameterService is not initialized")
-    params = service.get_region_parameters(region_index, data)
-    new_fs = _calc_font_size(data, white_frame_local, params)
-    if new_fs is not None:
-        data["font_size"] = new_fs
+    # Manual Edition: *every* interactive frame edit switches to fixed-size
+    # typography. Older JSON may still carry font_fit_mode="auto": never let
+    # dragging a handle silently recalculate the user's selected font size.
+    # One-shot fitting is a separate, explicit inspector command.
+    data["font_fit_mode"] = "fixed"
     return data
 
 
