@@ -189,6 +189,9 @@ class EditorControllerExportService:
         """
         from .chapter_backup import save_chapter_folder
 
+        # Keep the same renderer settings as Export Image. Capture them before
+        # switching threads so a settings edit cannot alter a running backup.
+        config = self._build_config_dict(self.config_service.get_config())
         with self._state_lock:
             if not self._accepting:
                 return False
@@ -196,6 +199,7 @@ class EditorControllerExportService:
                 future = self._executor.submit(
                     save_chapter_folder, tuple(image_paths), destination_parent,
                     source_folders=tuple(source_folders),
+                    render_config=config,
                 )
             except RuntimeError:
                 return False
