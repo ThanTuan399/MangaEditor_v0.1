@@ -17,7 +17,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from manga_translator.image_formats import SUPPORTED_IMAGE_EXTENSIONS
 
@@ -33,6 +33,9 @@ class ChapterBackupResult:
     pages: int
     groups: int
     external_exports: int
+    rendered_pages: int = 0
+    unchanged_pages: int = 0
+    rendered_directory: str | None = None
 
 
 def _canonical(path: str) -> str:
@@ -202,8 +205,19 @@ def save_chapter_folder(
     *,
     source_folders: Iterable[str] = (),
     created_at: datetime | None = None,
+    render_config: dict | None = None,
+    render_page: Callable | None = None,
 ) -> ChapterBackupResult:
-    """Create a new complete directory snapshot without overwriting anything.
+    """Create a complete chapter snapshot, including final typeset pages.
+
+    With render_config, re-export every saved page from its project JSON into
+    manga_translator_work/anh_da_chinh_sua. This uses the existing Editor
+    rendering pipeline, never raw-image copying for a page with saved edits.
+    render_page is injectable for deterministic tests; the UI always supplies
+    a real config. Without render_config this is the legacy data-only backup
+    mode used by existing external callers.
+
+    Nothing is published if any rendering operation fails.
 
     The parent must be outside all project folders, preventing recursive copies.
     The final backup only appears after all copies and JSON remaps succeed.
@@ -237,7 +251,19 @@ def save_chapter_folder(
     staging = tempfile.mkdtemp(prefix=".mangaeditor-chapter-", dir=parent)
     exported = 0
     manifest_pages = []
+    rendered_manifest = []
+    unchanged_pages = 0
+    output_dir_relative = os.path.join(
+        "manga_translator_work", "anh_da_chinh_sua"
+    )
+    used_render_paths: set[str] = set()
     try:
+        if render_config is not None:
+            if render_page is None:
+                from .chapter_render import render_saved_chapter_page
+                render_page = render_saved_chapter_page
+            if not callable(render_page):
+                raise TypeError("Invalid Editor page renderer")
         for index, (source_root, selected) in enumerate(groups, start=1):
             relative_root = (
                 "." if len(groups) == 1 else
@@ -251,13 +277,60 @@ def save_chapter_folder(
                 source_root, staging_root, dirs_exist_ok=True, ignore=_copy_ignore
             )
             exported += _relocate_json(staging_root, source_root, final_root)
-            manifest_pages.extend(
-                os.path.relpath(
-                    os.path.join(final_root, os.path.relpath(image, source_root)),
-                    target,
-                ).replace(os.sep, "/")
-                for image in selected
-            )
+            for image in selected:
+                page_relative = os.path.relpath(image, source_root)
+                original_relative = os.path.normpath(
+                    os.path.join(relative_root, page_relative)
+                )
+                manifest_pages.append(original_relative.replace(os.sep, "/"))
+                if render_config is None:
+                    continue
+
+                # Output pictures are separate from the original images, so
+                # opening this backup in Editor still finds the editable pages.
+                rendered_relative = os.path.normpath(os.path.join(
+                    output_dir_relative,
+                    os.path.splitext(original_relative)[0] + ".png",
+                ))
+                if os.path.normcase(rendered_relative) in used_render_paths:
+                    name, suffix = os.path.splitext(original_relative)
+                    rendered_relative = os.path.normpath(os.path.join(
+                        output_dir_relative,
+                        name + "_" + suffix.lstrip(".") + ".png",
+                    ))
+                if os.path.normcase(rendered_relative) in used_render_paths:
+                    raise ValueError(f"Duplicate rendered page name: {image}")
+                used_render_paths.add(os.path.normcase(rendered_relative))
+
+                staged_page = os.path.join(staging_root, page_relative)
+                final_page = os.path.join(final_root, page_relative)
+                staged_rendered = os.path.join(staging, rendered_relative)
+                os.makedirs(os.path.dirname(staged_rendered), exist_ok=True)
+
+                from manga_translator.utils.path_manager import find_json_path
+                if find_json_path(staged_page) is not None:
+                    render_page(
+                        staged_page, staged_rendered,
+                        dict(render_config), image_key=final_page,
+                    )
+                    status = "rendered"
+                else:
+                    # Pages which have never been edited cannot contain a
+                    # translated result. Include them as unedited rather than
+                    # omit them, and disclose that in the manifest and toast.
+                    from PIL import Image
+                    with Image.open(staged_page) as original:
+                        original.convert("RGB").save(staged_rendered, format="PNG")
+                    unchanged_pages += 1
+                    status = "unchanged"
+                if not os.path.isfile(staged_rendered) or os.path.getsize(staged_rendered) == 0:
+                    raise RuntimeError(f"Image output missing: {image}")
+
+                rendered_manifest.append({
+                    "source": original_relative.replace(os.sep, "/"),
+                    "output": rendered_relative.replace(os.sep, "/"),
+                    "status": status,
+                })
 
         manifest = {
             "format": "mangaeditor.chapter-backup.v1",
@@ -265,7 +338,10 @@ def save_chapter_folder(
             "page_count": len(images),
             "group_count": len(groups),
             "pages": manifest_pages,
-            "note": "Open this folder (or its chapters subfolders) in MangaEditor to resume editing.",
+            "rendered_pages": rendered_manifest,
+            "rendered_count": len(rendered_manifest) - unchanged_pages,
+            "unchanged_count": unchanged_pages,
+            "note": "Source pages remain editable; final typeset pages are in manga_translator_work/anh_da_chinh_sua.",
         }
         with open(os.path.join(staging, _MANIFEST_NAME), "w", encoding="utf-8") as handle:
             json.dump(manifest, handle, ensure_ascii=False, indent=2)
@@ -275,6 +351,12 @@ def save_chapter_folder(
         return ChapterBackupResult(
             folder=target, pages=len(images), groups=len(groups),
             external_exports=exported,
+            rendered_pages=len(rendered_manifest) - unchanged_pages,
+            unchanged_pages=unchanged_pages,
+            rendered_directory=(
+                os.path.join(target, output_dir_relative)
+                if render_config is not None else None
+            ),
         )
     finally:
         if staging and os.path.exists(staging):
