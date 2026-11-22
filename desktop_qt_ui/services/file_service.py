@@ -40,7 +40,7 @@ class FileService:
             '.json', '.yaml', '.yml', '.toml'
         }
 
-    def load_translation_json(self, image_path: str, image: Image.Image = None) -> Tuple[List[dict], Optional[np.ndarray], Optional[Tuple[int, int]], Dict[str, Any]]:
+    def load_translation_json(self, image_path: str, image: Image.Image = None, *, image_key_override: str | None = None) -> Tuple[List[dict], Optional[np.ndarray], Optional[Tuple[int, int]], Dict[str, Any]]:
         """
         根据给定的图片路径，加载关联的 _translations.json 文件。
         优先从新目录结构加载，支持向后兼容。
@@ -69,7 +69,7 @@ class FileService:
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            image_key = os.path.abspath(image_path)
+            image_key = os.path.abspath(image_key_override or image_path)
             
             if image_key not in data:
                 if data:

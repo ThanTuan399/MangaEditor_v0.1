@@ -176,6 +176,53 @@ class EditorControllerExportService:
         """脏检测唯一真相源：仅成功保存工程数据后标记 clean。"""
         return not self.controller.history_service.is_clean()
 
+    def backup_chapter_folder(
+        self, image_paths: list[str], destination_parent: str,
+        *, source_folders: tuple[str, ...] = (),
+    ) -> bool:
+        """Queue a portable whole-folder snapshot after any pending exports.
+
+        All page Editor states are already stored in their original folders;
+        the caller must flush and save the active page before requesting this.
+        Copying large chapters runs off the GUI thread in the existing serial
+        export queue, so exported files do not race with this backup job.
+        """
+        from .chapter_backup import save_chapter_folder
+
+        # Keep the same renderer settings as Export Image. Capture them before
+        # switching threads so a settings edit cannot alter a running backup.
+        config = self._build_config_dict(self.config_service.get_config())
+        with self._state_lock:
+            if not self._accepting:
+                return False
+            try:
+                future = self._executor.submit(
+                    save_chapter_folder, tuple(image_paths), destination_parent,
+                    source_folders=tuple(source_folders),
+                    render_config=config,
+                )
+            except RuntimeError:
+                return False
+            self._unfinished += 1
+
+        def finished(completed):
+            outcome = None
+            error = None
+            try:
+                outcome = completed.result()
+            except Exception as exc:
+                error = str(exc)
+                self.logger.error("Whole-chapter folder backup failed", exc_info=True)
+            with self._state_lock:
+                self._unfinished = max(0, self._unfinished - 1)
+                remaining = self._unfinished
+            self.controller._export_queue_status_signal.emit(remaining)
+            self.controller._chapter_backup_finished_signal.emit((outcome, error))
+
+        future.add_done_callback(finished)
+        self.controller._export_queue_status_signal.emit(self.unfinished_count())
+        return True
+
     def save_editor_state(self) -> bool:
         """同步保存 JSON 与当前内存快照中的修复图，不等待后台修复。"""
         self.controller.commit_pending_edits()

@@ -144,3 +144,30 @@ Trong Editor, chọn vùng thoại rồi chỉnh trong **Property Editor → Sty
 3. Đặt Font Size khác (ví dụ 20 → 32): khung không đổi, số dòng có thể thay đổi theo độ rộng; bấm Undo để quay lại.
 4. Tạo Rich Text gồm chữ đậm/chữ đỏ/chữ thường trong một câu, kéo khung, xác nhận kiểu chữ vẫn đúng; lưu, đóng mở lại và xuất ảnh so với preview.
 5. Kiểm tra JSON sau khi kéo khung: các ngắt dòng mềm mới không xuất hiện trong translation hoặc translation_rich.
+
+## Lưu toàn bộ chương vào một thư mục (Editor)
+
+Trên thanh công cụ Editor, chọn **Lưu cả chương** bên cạnh **Save** và **Export Image**:
+
+1. Mở chương từ OCR Workspace hoặc thêm thư mục ảnh vào Editor, chỉnh lời thoại, font, khung, mask và lớp vẽ bình thường.
+2. Bấm **Lưu cả chương**, chọn một *thư mục cha để chứa bản sao lưu*, nằm **ngoài thư mục nguồn** (ví dụ D:\MangaBackups).
+3. Editor lưu JSON và ảnh nền sửa của trang đang mở. Sau đó nó xếp công việc sao lưu vào hàng đợi nền cùng các tác vụ Export đang chạy, để không chép ảnh lúc đang ghi.
+4. Khi hoàn thành, thông báo chứa đường dẫn thư mục mới, ví dụ D:\MangaBackups\MangaEditor_Chapter_20261122_013000. Mỗi lần sao lưu tạo thư mục mới; không ghi đè dữ liệu hay bản sao lưu trước.
+
+Trong thư mục mới (một chương/nhóm thư mục nguồn):
+
+- Ảnh gốc giữ nguyên tên và cấu trúc thư mục.
+- **manga_translator_work/**: JSON chứa các câu dịch, Rich Text, font, khung chữ, mask, Paint/Stamp/Paste, inpaint và metadata liên quan. Các file phụ trợ có sẵn trong thư mục nguồn cũng được sao chép.
+- **mangaeditor_backup_manifest.json**: danh sách trang đã sao lưu và thông tin cấu trúc.
+- **manga_translator_work/anh_da_chinh_sua/** chứa **ảnh thành phẩm đã dịch và chỉnh kiểu chữ của từng trang** (PNG), render trực tiếp từ JSON, mask, Rich Text và các lớp đồ họa đã lưu bằng cùng cơ chế Export Image. Đường dẫn ảnh được ghi trong manifest; nếu trang chưa từng có JSON chỉnh sửa, ảnh được giữ nguyên và được đánh dấu "unchanged".
+- Ảnh xuất từ các lần trước (nếu có) vẫn được sao chép trong thư mục dự án để tham khảo; **không** dùng thay cho lần render mới.
+
+**Di chuyển/mở lại:** trên máy gốc, bạn có thể dùng **Thêm thư mục dự án** (OCR Workspace) hoặc **Add Folder** (Editor) trỏ đến thư mục sao lưu. Những JSON _translations.json cũ chứa đường dẫn ảnh tuyệt đối được *chỉ sửa trong bản sao*, để ứng dụng nhận vị trí ảnh mới. File dự án ban đầu không thay đổi. Nếu thư mục sao lưu chứa nhiều chương từ các thư mục nguồn khác nhau, hãy mở các thư mục con trong chapters/.
+
+**Phân biệt các nút:**
+
+- **Save / Ctrl+S**: lưu trang đang mở trong dự án gốc (không xuất ảnh).
+- **Export Image / Ctrl+Q**: tạo ảnh thành phẩm của trang đang mở.
+- **Lưu cả chương**: tạo bản sao dự án đầy đủ **và render lại các ảnh thành phẩm của mọi trang đã lưu**, đặt tại **manga_translator_work/anh_da_chinh_sua/**. Các trang trước đó phải được Save hoặc đã bật Auto Save khi chuyển trang; không thể khôi phục những thay đổi chưa từng lưu và đã bị bỏ đi.
+
+**Giới hạn:** font cài trong Windows hoặc thư mục fonts riêng của ứng dụng không tự được nhúng trong bản sao lưu. Muốn có kết quả giống hệt trên máy khác, phải cài lại đúng font. Tránh chọn thư mục sao lưu nằm trong chính thư mục ảnh nguồn; ứng dụng sẽ từ chối để không sao chép lồng vô hạn. Link tượng trưng (symlink), .git, .venv, các file tạm không được sao chép. Chỉ xuất hiện thông báo *thành công* khi bản sao lưu đã tạo xong.

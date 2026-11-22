@@ -123,6 +123,7 @@ class EditorController(QObject):
     # Export queue worker -> GUI thread signals
     _export_queue_status_signal = pyqtSignal(object)
     _export_job_finished_signal = pyqtSignal(object)
+    _chapter_backup_finished_signal = pyqtSignal(object)
 
     _load_result_ready = pyqtSignal(object)  # 加载结果信号
     _deferred_load_requested = pyqtSignal(str)
@@ -161,6 +162,7 @@ class EditorController(QObject):
         self._deferred_load_requested.connect(self.document_service.do_load_image)
         self._export_queue_status_signal.connect(self._on_export_queue_status_changed)
         self._export_job_finished_signal.connect(self._on_export_job_finished)
+        self._chapter_backup_finished_signal.connect(self._on_chapter_backup_finished)
 
         self.model.effective_mask_delta_changed.connect(
             self.inpaint_service.on_effective_mask_delta_changed
@@ -420,6 +422,27 @@ class EditorController(QObject):
         self._export_status_text = message
         if toast_manager is not None:
             self._export_toast = toast_manager.show_info(message, duration=0)
+
+    @pyqtSlot(object)
+    def _on_chapter_backup_finished(self, payload: object) -> None:
+        result, error = payload if isinstance(payload, tuple) else (None, "Unknown error")
+        toast_manager = self.get_toast_manager()
+        if toast_manager is None:
+            return
+        if result is not None:
+            rendered_dir = result.rendered_directory or result.folder
+            toast_manager.show_success(
+                f"Đã lưu cả chương: {result.rendered_pages} ảnh đã chỉnh sửa, "
+                f"{result.unchanged_pages} trang chưa chỉnh sửa.\n"
+                f"Ảnh thành phẩm: {rendered_dir}\nDự án: {result.folder}",
+                8000,
+                rendered_dir,
+            )
+        else:
+            toast_manager.show_error(
+                f"Sao lưu toàn bộ chương thất bại: {error or 'Lỗi không xác định'}",
+                7000,
+            )
 
     @pyqtSlot(object)
     def _on_export_job_finished(self, outcome: ExportOutcome) -> None:

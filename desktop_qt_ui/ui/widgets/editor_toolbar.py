@@ -137,6 +137,7 @@ class EditorToolbar(CardWidget):
     """
 
     save_requested = pyqtSignal()
+    backup_chapter_requested = pyqtSignal()
     export_requested = pyqtSignal()
     undo_requested = pyqtSignal()
     redo_requested = pyqtSignal()
@@ -262,6 +263,16 @@ class EditorToolbar(CardWidget):
         self.save_button.setText(self._t("Save"))
         self.save_button.clicked.connect(self.save_requested)
         layout.addWidget(self.save_button)
+
+        self.backup_chapter_button = PushButton()
+        self.backup_chapter_button.setIcon(FIF.FOLDER)
+        self.backup_chapter_button.setText("Lưu cả chương")
+        self.backup_chapter_button.setToolTip(
+            "Sao lưu toàn bộ thư mục ảnh, JSON chỉnh chữ, mask và các lớp chỉnh sửa "
+            "vào một thư mục mới. Không ghi đè dự án cũ."
+        )
+        self.backup_chapter_button.clicked.connect(self.backup_chapter_requested)
+        layout.addWidget(self.backup_chapter_button)
 
         self.export_button = PushButton()
         self.export_button.setIcon(FIF.IMAGE_EXPORT)
@@ -849,6 +860,7 @@ class EditorToolbar(CardWidget):
         """设置保存和导出按钮的启用状态。"""
         self._export_enabled = bool(enabled)
         self.save_button.setEnabled(self._export_enabled)
+        self.backup_chapter_button.setEnabled(self._export_enabled)
         self.export_button.setEnabled(self._export_enabled)
 
     def refresh_ui_texts(self):
@@ -858,6 +870,7 @@ class EditorToolbar(CardWidget):
         set_hover_hint(self.compare_quick_button, "Ảnh gốc / bản đã chỉnh sửa")
         self.arrange_button.setText(self._t("Arrange"))
         self.save_button.setText(self._t("Save"))
+        self.backup_chapter_button.setText("Lưu cả chương")
         self.export_button.setText(self._t("Export Image"))
         set_hover_hint(self.fit_window_button, self._t("Fit to Window"))
         self.opacity_label.setText(self._t("Original Image Opacity:"))
