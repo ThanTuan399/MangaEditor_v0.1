@@ -430,10 +430,13 @@ class EditorController(QObject):
         if toast_manager is None:
             return
         if result is not None:
+            rendered_dir = result.rendered_directory or result.folder
             toast_manager.show_success(
-                f"Đã sao lưu cả chương: {result.pages} trang\n{result.folder}",
-                7000,
-                result.folder,
+                f"Đã lưu cả chương: {result.rendered_pages} ảnh đã chỉnh sửa, "
+                f"{result.unchanged_pages} trang chưa chỉnh sửa.\n"
+                f"Ảnh thành phẩm: {rendered_dir}\nDự án: {result.folder}",
+                8000,
+                rendered_dir,
             )
         else:
             toast_manager.show_error(
